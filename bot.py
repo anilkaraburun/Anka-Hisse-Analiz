@@ -69,7 +69,7 @@ async def fiyat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     sembol = context.args[0].upper().strip()
 
-    # Kolay kullanım için kısayollar
+    # Kolay kullanım kısayolları
     if sembol in ["ALTIN", "GOLD"]:
         sembol = "GC=F"
     elif sembol in ["DOLAR", "USD"]:
@@ -78,33 +78,35 @@ async def fiyat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sembol = "EURTRY=X"
     elif sembol in ["GUMUS", "SILVER"]:
         sembol = "SI=F"
-    # BIST hisseleri için .IS ekle (eğer yoksa)
-    elif len(sembol) <= 5 and not sembol.endswith(".IS") and not any(x in sembol for x in ["=", "-", "."]):
+    # BIST hisseleri için .IS ekle
+    elif len(sembol) <= 5 and not any(x in sembol for x in [".", "=", "-"]):
         sembol = f"{sembol}.IS"
 
     try:
         ticker = yf.Ticker(sembol)
-        info = ticker.info
+        hist = ticker.history(period="5d")
 
-        fiyat = info.get("regularMarketPrice") or info.get("currentPrice") or info.get("previousClose")
-        degisim = info.get("regularMarketChangePercent")
-        isim = info.get("shortName") or info.get("longName") or sembol
-
-        if fiyat is None:
+        if hist.empty:
             await update.message.reply_text(
                 f"❌ {sembol} için veri bulunamadı.\n"
-                "Sembolü kontrol et veya farklı bir tane dene."
+                "Sembolü kontrol et."
             )
             return
 
-        degisim_yazi = ""
-        if degisim is not None:
+        fiyat = float(hist["Close"].iloc[-1])
+
+        # Günlük değişim
+        if len(hist) >= 2:
+            onceki = float(hist["Close"].iloc[-2])
+            degisim = ((fiyat - onceki) / onceki) * 100
             isaret = "📈" if degisim >= 0 else "📉"
             degisim_yazi = f"\n{isaret} Günlük: %{degisim:.2f}"
+        else:
+            degisim_yazi = ""
 
         mesaj = (
             f"🦅 ANKA YATIRIM ANALİZ\n\n"
-            f"{isim}\n"
+            f"{sembol}\n"
             f"💰 Fiyat: {fiyat:,.2f}\n"
             f"{degisim_yazi}"
         )
@@ -114,7 +116,7 @@ async def fiyat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"❌ Hata oluştu.\n"
             f"Sembol: {sembol}\n"
-            "Lütfen daha sonra tekrar dene."
+            f"Detay: {str(e)[:300]}"
         )
 
 
