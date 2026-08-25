@@ -1,1 +1,2 @@
 python-telegram-bot==22.5
+yfinance==0.2.54
