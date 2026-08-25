@@ -1,5 +1,6 @@
 import os
 import yfinance as yf
+import pandas as pd
 from telegram import Update
 from telegram.ext import (
     Application,
