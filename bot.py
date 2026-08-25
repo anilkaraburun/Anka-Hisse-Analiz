@@ -67,20 +67,24 @@ async def fiyat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    sembol = context.args[0].upper().strip()
+    girilen = context.args[0].upper().strip()
+    sembol = girilen
 
     # Kolay kullanım kısayolları
-    if sembol in ["ALTIN", "GOLD"]:
+    if girilen in ["ALTIN", "GOLD"]:
         sembol = "GC=F"
-    elif sembol in ["DOLAR", "USD"]:
+    elif girilen in ["DOLAR", "USD"]:
         sembol = "USDTRY=X"
-    elif sembol in ["EURO", "EUR"]:
+    elif girilen in ["EURO", "EUR"]:
         sembol = "EURTRY=X"
-    elif sembol in ["GUMUS", "SILVER"]:
+    elif girilen in ["GUMUS", "SILVER"]:
         sembol = "SI=F"
-    # BIST hisseleri için .IS ekle
-    elif len(sembol) <= 5 and not any(x in sembol for x in [".", "=", "-"]):
-        sembol = f"{sembol}.IS"
+    # Sadece BIST gibi görünen kısa sembollere .IS ekle
+    # ABD hisseleri (AAPL, TSLA, MSFT vb.) ve zaten nokta içerenler hariç
+    elif (len(girilen) <= 5 
+          and not any(x in girilen for x in [".", "=", "-"])
+          and girilen not in ["AAPL", "TSLA", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "NFLX"]):
+        sembol = f"{girilen}.IS"
 
     try:
         ticker = yf.Ticker(sembol)
@@ -93,16 +97,25 @@ async def fiyat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        fiyat = float(hist["Close"].iloc[-1])
+        # NaN kontrolü
+        son_kapanis = hist["Close"].iloc[-1]
+        if pd.isna(son_kapanis):
+            await update.message.reply_text(
+                f"❌ {sembol} için güncel fiyat alınamadı.\n"
+                "Piyasa kapalı olabilir veya veri geçici olarak gelmiyor."
+            )
+            return
+
+        fiyat = float(son_kapanis)
 
         # Günlük değişim
+        degisim_yazi = ""
         if len(hist) >= 2:
-            onceki = float(hist["Close"].iloc[-2])
-            degisim = ((fiyat - onceki) / onceki) * 100
-            isaret = "📈" if degisim >= 0 else "📉"
-            degisim_yazi = f"\n{isaret} Günlük: %{degisim:.2f}"
-        else:
-            degisim_yazi = ""
+            onceki = hist["Close"].iloc[-2]
+            if not pd.isna(onceki) and onceki != 0:
+                degisim = ((fiyat - float(onceki)) / float(onceki)) * 100
+                isaret = "📈" if degisim >= 0 else "📉"
+                degisim_yazi = f"\n{isaret} Günlük: %{degisim:.2f}"
 
         mesaj = (
             f"🦅 ANKA YATIRIM ANALİZ\n\n"
