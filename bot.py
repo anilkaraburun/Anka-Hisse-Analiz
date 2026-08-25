@@ -1,6 +1,5 @@
 import os
-import yfinance as yf
-import pandas as pd
+import requests
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -9,6 +8,12 @@ from telegram.ext import (
 )
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+COLLECT_API_KEY = os.getenv("COLLECT_API_KEY")
+
+HEADERS = {
+    "authorization": f"apikey {COLLECT_API_KEY}",
+    "content-type": "application/json"
+}
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -16,10 +21,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🦅 ANKA YATIRIM ANALİZ\n\n"
         "Finansal piyasa analiz botuna hoş geldin.\n\n"
         "Kullanılabilir komutlar:\n"
-        "/fiyat THYAO\n"
-        "/fiyat AAPL\n"
-        "/fiyat altın\n"
         "/fiyat dolar\n"
+        "/fiyat euro\n"
+        "/fiyat altın\n"
+        "/fiyat gümüş\n"
         "/test\n"
         "/anka\n"
         "/hakkinda"
@@ -31,7 +36,7 @@ async def anka(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mesaj = (
         "🦅 ANKA YATIRIM ANALİZ\n\n"
         "Ana menü\n\n"
-        "/fiyat [sembol] - Fiyat sorgula\n"
+        "/fiyat [dolar/euro/altın/gümüş] - Fiyat sorgula\n"
         "/test - Bağlantı testi\n"
         "/hakkinda - Proje hakkında"
     )
@@ -59,78 +64,123 @@ async def hakkinda(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def fiyat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text(
-            "Lütfen sembol gir.\n\n"
+            "Lütfen ne istediğini yaz.\n\n"
             "Örnekler:\n"
-            "/fiyat THYAO\n"
-            "/fiyat AAPL\n"
+            "/fiyat dolar\n"
+            "/fiyat euro\n"
             "/fiyat altın\n"
-            "/fiyat dolar"
+            "/fiyat gümüş"
         )
         return
 
-    girilen = context.args[0].upper().strip()
-    sembol = girilen
+    if not COLLECT_API_KEY:
+        await update.message.reply_text("❌ COLLECT_API_KEY bulunamadı!")
+        return
 
-    # Kolay kullanım kısayolları
-    if girilen in ["ALTIN", "GOLD"]:
-        sembol = "GC=F"
-    elif girilen in ["DOLAR", "USD"]:
-        sembol = "USDTRY=X"
-    elif girilen in ["EURO", "EUR"]:
-        sembol = "EURTRY=X"
-    elif girilen in ["GUMUS", "SILVER"]:
-        sembol = "SI=F"
-    # Sadece BIST gibi görünen kısa sembollere .IS ekle
-    # ABD hisseleri (AAPL, TSLA, MSFT vb.) ve zaten nokta içerenler hariç
-    elif (len(girilen) <= 5 
-          and not any(x in girilen for x in [".", "=", "-"])
-          and girilen not in ["AAPL", "TSLA", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "NFLX"]):
-        sembol = f"{girilen}.IS"
+    istek = context.args[0].lower().strip()
 
     try:
-        ticker = yf.Ticker(sembol)
-        hist = ticker.history(period="5d")
+        if istek in ["dolar", "usd"]:
+            url = "https://api.collectapi.com/economy/singleCurrency?int=1&tag=USD"
+            r = requests.get(url, headers=HEADERS, timeout=10)
+            data = r.json()
 
-        if hist.empty:
-            await update.message.reply_text(
-                f"❌ {sembol} için veri bulunamadı.\n"
-                "Sembolü kontrol et."
+            if data.get("success"):
+                result = data["result"][0] if isinstance(data["result"], list) else data["result"]
+                alis = result.get("buying") or result.get("alis")
+                satis = result.get("selling") or result.get("satis")
+                mesaj = (
+                    f"🦅 ANKA YATIRIM ANALİZ\n\n"
+                    f"💵 Dolar (USD/TRY)\n"
+                    f"Alış: {alis}\n"
+                    f"Satış: {satis}"
+                )
+            else:
+                mesaj = "❌ Dolar verisi alınamadı."
+
+        elif istek in ["euro", "eur"]:
+            url = "https://api.collectapi.com/economy/singleCurrency?int=1&tag=EUR"
+            r = requests.get(url, headers=HEADERS, timeout=10)
+            data = r.json()
+
+            if data.get("success"):
+                result = data["result"][0] if isinstance(data["result"], list) else data["result"]
+                alis = result.get("buying") or result.get("alis")
+                satis = result.get("selling") or result.get("satis")
+                mesaj = (
+                    f"🦅 ANKA YATIRIM ANALİZ\n\n"
+                    f"💶 Euro (EUR/TRY)\n"
+                    f"Alış: {alis}\n"
+                    f"Satış: {satis}"
+                )
+            else:
+                mesaj = "❌ Euro verisi alınamadı."
+
+        elif istek in ["altın", "altin", "gold"]:
+            url = "https://api.collectapi.com/economy/goldPrice"
+            r = requests.get(url, headers=HEADERS, timeout=10)
+            data = r.json()
+
+            if data.get("success"):
+                # Gram altın genellikle listede "Gram Altın" olarak gelir
+                gram = None
+                for item in data["result"]:
+                    name = item.get("name", "").lower()
+                    if "gram" in name and "altın" in name:
+                        gram = item
+                        break
+                if gram:
+                    mesaj = (
+                        f"🦅 ANKA YATIRIM ANALİZ\n\n"
+                        f"🥇 Gram Altın\n"
+                        f"Alış: {gram.get('buying') or gram.get('alis')}\n"
+                        f"Satış: {gram.get('selling') or gram.get('satis')}"
+                    )
+                else:
+                    mesaj = "❌ Gram altın verisi bulunamadı."
+            else:
+                mesaj = "❌ Altın verisi alınamadı."
+
+        elif istek in ["gümüş", "gumus", "silver"]:
+            url = "https://api.collectapi.com/economy/goldPrice"
+            r = requests.get(url, headers=HEADERS, timeout=10)
+            data = r.json()
+
+            if data.get("success"):
+                gumus = None
+                for item in data["result"]:
+                    name = item.get("name", "").lower()
+                    if "gümüş" in name or "gumus" in name:
+                        gumus = item
+                        break
+                if gumus:
+                    mesaj = (
+                        f"🦅 ANKA YATIRIM ANALİZ\n\n"
+                        f"🥈 Gümüş\n"
+                        f"Alış: {gumus.get('buying') or gumus.get('alis')}\n"
+                        f"Satış: {gumus.get('selling') or gumus.get('satis')}"
+                    )
+                else:
+                    mesaj = "❌ Gümüş verisi bulunamadı."
+            else:
+                mesaj = "❌ Gümüş verisi alınamadı."
+
+        else:
+            mesaj = (
+                "Şu an sadece şunları destekliyorum:\n"
+                "/fiyat dolar\n"
+                "/fiyat euro\n"
+                "/fiyat altın\n"
+                "/fiyat gümüş\n\n"
+                "BIST hisseleri yakında eklenecek."
             )
-            return
 
-        # NaN kontrolü
-        son_kapanis = hist["Close"].iloc[-1]
-        if pd.isna(son_kapanis):
-            await update.message.reply_text(
-                f"❌ {sembol} için güncel fiyat alınamadı.\n"
-                "Piyasa kapalı olabilir veya veri geçici olarak gelmiyor."
-            )
-            return
-
-        fiyat = float(son_kapanis)
-
-        # Günlük değişim
-        degisim_yazi = ""
-        if len(hist) >= 2:
-            onceki = hist["Close"].iloc[-2]
-            if not pd.isna(onceki) and onceki != 0:
-                degisim = ((fiyat - float(onceki)) / float(onceki)) * 100
-                isaret = "📈" if degisim >= 0 else "📉"
-                degisim_yazi = f"\n{isaret} Günlük: %{degisim:.2f}"
-
-        mesaj = (
-            f"🦅 ANKA YATIRIM ANALİZ\n\n"
-            f"{sembol}\n"
-            f"💰 Fiyat: {fiyat:,.2f}\n"
-            f"{degisim_yazi}"
-        )
         await update.message.reply_text(mesaj)
 
     except Exception as e:
         await update.message.reply_text(
             f"❌ Hata oluştu.\n"
-            f"Sembol: {sembol}\n"
-            f"Detay: {str(e)[:300]}"
+            f"Detay: {str(e)[:250]}"
         )
 
 
