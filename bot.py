@@ -13,7 +13,7 @@ from telegram.ext import (
 
 # ============================================================
 # 🦅 ANKA YATIRIM ANALİZ
-# SABİT TEKNİK ANALİZ MOTORU
+# STABİL TEKNİK ANALİZ MOTORU
 # ============================================================
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -174,9 +174,17 @@ def get_data(symbol, period="1y", interval="1d"):
             logger.error("%s için veri boş.", symbol)
             return None
 
+        # ----------------------------------------------------
         # MultiIndex güvenliği
+        # ----------------------------------------------------
+
         if isinstance(data.columns, pd.MultiIndex):
+
             data.columns = data.columns.get_level_values(0)
+
+        # ----------------------------------------------------
+        # Gerekli kolonlar
+        # ----------------------------------------------------
 
         required_columns = [
             "Open",
@@ -263,10 +271,7 @@ def calculate_rsi(series, period=14):
         adjust=False
     ).mean()
 
-    rs = avg_gain / avg_loss.replace(
-        0,
-        pd.NA
-    )
+    rs = avg_gain / avg_loss
 
     rsi = 100 - (
         100 / (1 + rs)
@@ -350,7 +355,9 @@ def calculate_stochastic(
 ):
 
     high = data["High"]
+
     low = data["Low"]
+
     close = data["Close"]
 
     lowest_low = low.rolling(
@@ -380,7 +387,10 @@ def calculate_stochastic(
         smooth
     ).mean()
 
-    return k, d
+    return (
+        k,
+        d
+    )
 
 
 # ============================================================
@@ -393,7 +403,9 @@ def calculate_atr(
 ):
 
     high = data["High"]
+
     low = data["Low"]
+
     close = data["Close"]
 
     previous_close = close.shift(1)
@@ -447,9 +459,11 @@ def calculate_volume_ratio(
     ).mean()
 
     current_volume = volume.iloc[-1]
+
     average = average_volume.iloc[-1]
 
     if pd.isna(average) or average == 0:
+
         return 1.0
 
     return float(
@@ -461,9 +475,15 @@ def calculate_volume_ratio(
 # DESTEK / DİRENÇ
 # ============================================================
 
-def calculate_support_resistance(data):
+def calculate_support_resistance(
+    data
+):
 
     recent = data.tail(60)
+
+    if len(recent) < 10:
+
+        return None, None
 
     high = pd.to_numeric(
         recent["High"],
@@ -480,11 +500,8 @@ def calculate_support_resistance(data):
         errors="coerce"
     ).dropna()
 
-    if (
-        len(high) < 10
-        or len(low) < 10
-        or close.empty
-    ):
+    if len(high) < 10 or len(low) < 10:
+
         return None, None
 
     current = float(
@@ -492,53 +509,45 @@ def calculate_support_resistance(data):
     )
 
     # --------------------------------------------------------
-    # Fiyatın ALTINDAKİ en yakın anlamlı destek
+    # Fiyatın altında kalan en yakın destek
     # --------------------------------------------------------
 
-    previous_lows = sorted(
+    lows = sorted(
         set(
-            round(float(x), 8)
+            round(float(x), 4)
             for x in low
             if float(x) < current
         ),
         reverse=True
     )
 
-    if previous_lows:
-
-        support = previous_lows[0]
-
-    else:
-
-        support = float(
-            low.min()
-        )
-
     # --------------------------------------------------------
-    # Fiyatın ÜSTÜNDEKİ en yakın anlamlı direnç
+    # Fiyatın üstünde kalan en yakın direnç
     # --------------------------------------------------------
 
-    previous_highs = sorted(
+    highs = sorted(
         set(
-            round(float(x), 8)
+            round(float(x), 4)
             for x in high
             if float(x) > current
         )
     )
 
-    if previous_highs:
+    support = (
+        lows[0]
+        if lows
+        else float(low.min())
+    )
 
-        resistance = previous_highs[0]
-
-    else:
-
-        resistance = float(
-            high.max()
-        )
+    resistance = (
+        highs[0]
+        if highs
+        else float(high.max())
+    )
 
     return (
-        float(support),
-        float(resistance)
+        support,
+        resistance
     )
 
 
@@ -547,16 +556,16 @@ def calculate_support_resistance(data):
 #
 # TOPLAM = 100 PUAN
 #
-# EMA / FİYAT       15
-# EMA TREND         15
-# RSI               15
-# MACD              15
-# MACD HISTOGRAM    10
-# BOLLINGER         10
-# STOCHASTIC        10
-# DESTEK/DİRENÇ     10
+# EMA20       15
+# EMA50       15
+# RSI         15
+# MACD        15
+# Histogram   10
+# Bollinger   10
+# Stochastic  10
+# Destek      10
 #
-# TOPLAM            100
+# Toplam      100
 # ============================================================
 
 def calculate_anka_score(
@@ -568,8 +577,6 @@ def calculate_anka_score(
     signal,
     histogram,
     bb_middle,
-    bb_upper,
-    bb_lower,
     stoch_k,
     stoch_d,
     support,
@@ -579,7 +586,6 @@ def calculate_anka_score(
     score = 0
 
     reasons = []
-
 
     # ========================================================
     # 1 — FİYAT / EMA20
@@ -595,8 +601,6 @@ def calculate_anka_score(
         )
 
     else:
-
-        score += 0
 
         reasons.append(
             "• Fiyat EMA20 altında"
@@ -618,8 +622,6 @@ def calculate_anka_score(
 
     else:
 
-        score += 0
-
         reasons.append(
             "• EMA20, EMA50 altında"
         )
@@ -635,39 +637,15 @@ def calculate_anka_score(
         score += 15
 
         reasons.append(
-            "• RSI sağlıklı pozitif bölgede"
+            "• RSI güçlü pozitif bölgede"
         )
 
     elif 50 <= rsi < 55:
 
-        score += 12
+        score += 11
 
         reasons.append(
             "• RSI pozitif bölgede"
-        )
-
-    elif 65 < rsi <= 70:
-
-        score += 13
-
-        reasons.append(
-            "• RSI güçlü bölgede"
-        )
-
-    elif 70 < rsi <= 80:
-
-        score += 10
-
-        reasons.append(
-            "• RSI yüksek / aşırı alım bölgesi"
-        )
-
-    elif rsi > 80:
-
-        score += 6
-
-        reasons.append(
-            "• RSI aşırı alım bölgesinde"
         )
 
     elif 40 <= rsi < 50:
@@ -683,12 +661,20 @@ def calculate_anka_score(
         score += 3
 
         reasons.append(
-            "• RSI zayıf"
+            "• RSI zayıf bölgede"
+        )
+
+    elif rsi > 65:
+
+        score += 10
+
+        reasons.append(
+            "• RSI yüksek / aşırı alım bölgesi"
         )
 
     else:
 
-        score += 2
+        score += 5
 
         reasons.append(
             "• RSI aşırı satım bölgesinde"
@@ -705,31 +691,29 @@ def calculate_anka_score(
         score += 15
 
         reasons.append(
-            "• MACD pozitif ve Signal üzerinde"
+            "• MACD pozitif"
         )
 
     elif macd > signal:
 
-        score += 11
+        score += 10
 
         reasons.append(
             "• MACD Signal üzerinde"
         )
 
-    elif macd < signal and macd > 0:
-
-        score += 6
+    elif macd < signal and macd < 0:
 
         reasons.append(
-            "• MACD pozitif fakat Signal altında"
+            "• MACD Signal altında"
         )
 
     else:
 
-        score += 0
+        score += 4
 
         reasons.append(
-            "• MACD Signal altında"
+            "• MACD zayıf"
         )
 
 
@@ -748,8 +732,6 @@ def calculate_anka_score(
 
     else:
 
-        score += 0
-
         reasons.append(
             "• MACD histogram negatif"
         )
@@ -760,7 +742,7 @@ def calculate_anka_score(
     # 10 PUAN
     # ========================================================
 
-    if price >= bb_middle:
+    if price > bb_middle:
 
         score += 10
 
@@ -768,20 +750,10 @@ def calculate_anka_score(
             "• Fiyat Bollinger orta bandının üzerinde"
         )
 
-    elif price >= bb_lower:
-
-        score += 4
+    else:
 
         reasons.append(
             "• Fiyat Bollinger orta bandının altında"
-        )
-
-    else:
-
-        score += 1
-
-        reasons.append(
-            "• Fiyat Bollinger alt bandının altında"
         )
 
 
@@ -790,7 +762,7 @@ def calculate_anka_score(
     # 10 PUAN
     # ========================================================
 
-    if stoch_k > stoch_d and stoch_k < 80:
+    if stoch_k > stoch_d:
 
         score += 10
 
@@ -798,25 +770,7 @@ def calculate_anka_score(
             "• Stochastic pozitif"
         )
 
-    elif stoch_k > stoch_d:
-
-        score += 8
-
-        reasons.append(
-            "• Stochastic yükseliş yönünde"
-        )
-
-    elif stoch_k < stoch_d and stoch_k < 20:
-
-        score += 4
-
-        reasons.append(
-            "• Stochastic aşırı satım bölgesinde"
-        )
-
     else:
-
-        score += 2
 
         reasons.append(
             "• Stochastic negatif"
@@ -834,59 +788,61 @@ def calculate_anka_score(
         and resistance > support
     ):
 
-        price_range = resistance - support
-
-        position = (
+        distance_to_support = abs(
             price - support
-        ) / price_range
+        )
 
-        # Destek kırılmışsa
-        if price < support:
+        distance_to_resistance = abs(
+            resistance - price
+        )
 
-            score += 0
+        total_range = (
+            resistance - support
+        )
 
-            reasons.append(
-                "• Fiyat desteğin altında"
-            )
+        # Desteğe çok yakınsa
+        if (
+            distance_to_support
+            <= total_range * 0.15
+        ):
 
-        # Desteğe çok yakın
-        elif position <= 0.25:
-
-            score += 7
+            score += 10
 
             reasons.append(
                 "• Fiyat destek bölgesine yakın"
             )
 
-        # Orta bölge
-        elif position <= 0.75:
+        # Dirence çok yakınsa
+        elif (
+            distance_to_resistance
+            <= total_range * 0.15
+        ):
 
             score += 5
-
-            reasons.append(
-                "• Fiyat destek/direnç arasında"
-            )
-
-        # Dirence yakın
-        else:
-
-            score += 6
 
             reasons.append(
                 "• Fiyat direnç bölgesine yakın"
             )
 
+        else:
+
+            score += 3
+
+            reasons.append(
+                "• Fiyat destek/direnç arasında"
+            )
+
     else:
 
-        score += 5
+        score += 3
 
         reasons.append(
-            "• Destek/direnç hesaplaması sınırlı"
+            "• Destek/direnç hesaplandı"
         )
 
 
     # ========================================================
-    # SKORU KESİN OLARAK 0-100 ARASINDA TUT
+    # SKOR SINIRLAMA
     # ========================================================
 
     score = max(
@@ -896,7 +852,6 @@ def calculate_anka_score(
             score
         )
     )
-
 
     return (
         int(score),
@@ -936,9 +891,7 @@ def calculate_trend(
 
         return "📉 DÜŞÜŞ"
 
-    else:
-
-        return "➡️ YATAY"
+    return "➡️ YATAY"
 
 
 # ============================================================
@@ -963,9 +916,7 @@ def calculate_signal(score):
 
         return "🟠 ZAYIF"
 
-    else:
-
-        return "🔴 SAT"
+    return "🔴 SAT"
 
 
 # ============================================================
@@ -997,7 +948,9 @@ def calculate_breakout(
 # TEKNİK ANALİZ
 # ============================================================
 
-def technical_analysis(symbol):
+def technical_analysis(
+    symbol
+):
 
     data = get_data(
         symbol,
@@ -1006,6 +959,7 @@ def technical_analysis(symbol):
     )
 
     if data is None:
+
         return None
 
     try:
@@ -1018,12 +972,20 @@ def technical_analysis(symbol):
         if len(close) < 60:
 
             logger.warning(
-                "%s için yeterli veri yok. Veri: %s",
+                "%s için yeterli veri yok: %s",
                 symbol,
                 len(close)
             )
 
             return None
+
+        # ====================================================
+        # FİYAT
+        # ====================================================
+
+        price = float(
+            close.iloc[-1]
+        )
 
 
         # ====================================================
@@ -1050,15 +1012,6 @@ def technical_analysis(symbol):
 
 
         # ====================================================
-        # FİYAT
-        # ====================================================
-
-        price = float(
-            close.iloc[-1]
-        )
-
-
-        # ====================================================
         # RSI
         # ====================================================
 
@@ -1067,9 +1020,13 @@ def technical_analysis(symbol):
             14
         )
 
-        rsi_clean = rsi_series.dropna()
+        rsi_clean = (
+            rsi_series
+            .dropna()
+        )
 
         if rsi_clean.empty:
+
             return None
 
         rsi = float(
@@ -1093,7 +1050,7 @@ def technical_analysis(symbol):
             macd_series.iloc[-1]
         )
 
-        signal = float(
+        macd_signal = float(
             signal_series.iloc[-1]
         )
 
@@ -1111,19 +1068,23 @@ def technical_analysis(symbol):
             bb_upper_series,
             bb_lower_series
         ) = calculate_bollinger(
-            close
+            close,
+            20
         )
 
         bb_middle_clean = (
-            bb_middle_series.dropna()
+            bb_middle_series
+            .dropna()
         )
 
         bb_upper_clean = (
-            bb_upper_series.dropna()
+            bb_upper_series
+            .dropna()
         )
 
         bb_lower_clean = (
-            bb_lower_series.dropna()
+            bb_lower_series
+            .dropna()
         )
 
         if (
@@ -1131,6 +1092,7 @@ def technical_analysis(symbol):
             or bb_upper_clean.empty
             or bb_lower_clean.empty
         ):
+
             return None
 
         bb_middle = float(
@@ -1159,17 +1121,20 @@ def technical_analysis(symbol):
         )
 
         stoch_k_clean = (
-            stoch_k_series.dropna()
+            stoch_k_series
+            .dropna()
         )
 
         stoch_d_clean = (
-            stoch_d_series.dropna()
+            stoch_d_series
+            .dropna()
         )
 
         if (
             stoch_k_clean.empty
             or stoch_d_clean.empty
         ):
+
             return None
 
         stoch_k = float(
@@ -1190,23 +1155,31 @@ def technical_analysis(symbol):
             14
         )
 
-        atr_clean = atr_series.dropna()
+        atr_clean = (
+            atr_series
+            .dropna()
+        )
 
         if atr_clean.empty:
-            return None
 
-        atr = float(
-            atr_clean.iloc[-1]
-        )
+            atr = 0.0
+
+        else:
+
+            atr = float(
+                atr_clean.iloc[-1]
+            )
 
 
         # ====================================================
         # HACİM
         # ====================================================
 
-        volume_ratio = calculate_volume_ratio(
-            data,
-            20
+        volume_ratio = (
+            calculate_volume_ratio(
+                data,
+                20
+            )
         )
 
 
@@ -1222,18 +1195,7 @@ def technical_analysis(symbol):
 
 
         # ====================================================
-        # TREND
-        # ====================================================
-
-        trend = calculate_trend(
-            price,
-            ema20,
-            ema50
-        )
-
-
-        # ====================================================
-        # ANKA SKORU
+        # SKOR
         # ====================================================
 
         score, reasons = calculate_anka_score(
@@ -1248,15 +1210,11 @@ def technical_analysis(symbol):
 
             macd=macd,
 
-            signal=signal,
+            signal=macd_signal,
 
             histogram=histogram,
 
             bb_middle=bb_middle,
-
-            bb_upper=bb_upper,
-
-            bb_lower=bb_lower,
 
             stoch_k=stoch_k,
 
@@ -1265,6 +1223,17 @@ def technical_analysis(symbol):
             support=support,
 
             resistance=resistance
+        )
+
+
+        # ====================================================
+        # TREND
+        # ====================================================
+
+        trend = calculate_trend(
+            price,
+            ema20,
+            ema50
         )
 
 
@@ -1288,6 +1257,89 @@ def technical_analysis(symbol):
         )
 
 
+        # ====================================================
+        # RSI DURUMU
+        # ====================================================
+
+        if rsi >= 70:
+
+            rsi_status = "🔴 Aşırı alım"
+
+        elif rsi >= 55:
+
+            rsi_status = "🟢 Güçlü"
+
+        elif rsi >= 50:
+
+            rsi_status = "🟢 Pozitif"
+
+        elif rsi >= 40:
+
+            rsi_status = "🟡 Hafif zayıf"
+
+        elif rsi >= 30:
+
+            rsi_status = "🟠 Zayıf"
+
+        else:
+
+            rsi_status = "🔵 Aşırı satım"
+
+
+        # ====================================================
+        # MACD DURUMU
+        # ====================================================
+
+        if (
+            macd > macd_signal
+            and macd > 0
+        ):
+
+            macd_status = "🟢 Pozitif"
+
+        elif macd > macd_signal:
+
+            macd_status = "🟢 Signal üzerinde"
+
+        else:
+
+            macd_status = "🔴 Negatif"
+
+
+        # ====================================================
+        # BOLLINGER DURUMU
+        # ====================================================
+
+        if price > bb_upper:
+
+            bb_status = "🔴 Üst bandın üzerinde"
+
+        elif price > bb_middle:
+
+            bb_status = "🟢 Orta bandın üzerinde"
+
+        elif price > bb_lower:
+
+            bb_status = "🟡 Orta bandın altında"
+
+        else:
+
+            bb_status = "🔵 Alt bandın altında"
+
+
+        # ====================================================
+        # STOCHASTIC DURUMU
+        # ====================================================
+
+        if stoch_k > stoch_d:
+
+            stoch_status = "🟢 Pozitif"
+
+        else:
+
+            stoch_status = "🔴 Negatif"
+
+
         return {
 
             "price": price,
@@ -1298,11 +1350,15 @@ def technical_analysis(symbol):
 
             "rsi": rsi,
 
+            "rsi_status": rsi_status,
+
             "macd": macd,
 
-            "signal": signal,
+            "macd_signal": macd_signal,
 
             "histogram": histogram,
+
+            "macd_status": macd_status,
 
             "bb_upper": bb_upper,
 
@@ -1310,9 +1366,13 @@ def technical_analysis(symbol):
 
             "bb_lower": bb_lower,
 
+            "bb_status": bb_status,
+
             "stoch_k": stoch_k,
 
             "stoch_d": stoch_d,
+
+            "stoch_status": stoch_status,
 
             "atr": atr,
 
@@ -1322,23 +1382,22 @@ def technical_analysis(symbol):
 
             "resistance": resistance,
 
+            "breakout": breakout,
+
             "trend": trend,
 
             "score": score,
 
             "signal_text": signal_text,
 
-            "breakout": breakout,
-
             "reasons": reasons
-
         }
 
 
     except Exception as e:
 
         logger.exception(
-            "Teknik analiz hatası: %s",
+            "Teknik analiz hatası %s",
             symbol
         )
 
@@ -1383,8 +1442,6 @@ yeni nesil analiz botu.
 
 /analiz THYAO
 /analiz ALTIN
-/analiz GUMUS
-/analiz BAKIR
 
 /metaller
 
@@ -1405,9 +1462,12 @@ EMA20 • EMA50
 RSI • MACD
 Bollinger
 Stochastic
-ATR • Hacim
+ATR
+Hacim
 Destek / Direnç
 Anka Skoru
+
+⭐ Anka Skoru: 0-100
 
 ⚠️ Bu sistem yatırım tavsiyesi değildir.
 """
@@ -1538,17 +1598,23 @@ async def fiyat(
 
 
         high = (
-            float(data["High"].iloc[-1])
+            float(
+                data["High"]
+                .dropna()
+                .iloc[-1]
+            )
             if "High" in data.columns
-            and pd.notna(data["High"].iloc[-1])
             else current
         )
 
 
         low = (
-            float(data["Low"].iloc[-1])
+            float(
+                data["Low"]
+                .dropna()
+                .iloc[-1]
+            )
             if "Low" in data.columns
-            and pd.notna(data["Low"].iloc[-1])
             else current
         )
 
@@ -1557,13 +1623,11 @@ async def fiyat(
 
             "🟢"
             if change > 0
-            else
 
-            "🔴"
+            else "🔴"
             if change < 0
-            else
 
-            "🟡"
+            else "🟡"
         )
 
 
@@ -1573,7 +1637,12 @@ async def fiyat(
 
             f"📊 {asset}\n\n"
 
-            f"💰 Fiyat: {current:.4f}\n\n"
+            f"{info['name']}\n\n"
+
+            "━━━━━━━━━━━━━━━━\n\n"
+
+            f"💰 Fiyat: "
+            f"{current:.4f}\n\n"
 
             f"{direction} Günlük değişim: "
             f"{change:+.2f}%\n\n"
@@ -1588,10 +1657,8 @@ async def fiyat(
 
             "📌 Veri kaynağı: Yahoo Finance\n\n"
 
-            "🧠 Teknik analiz için:\n"
-
+            f"🧠 Teknik analiz:\n"
             f"/analiz {asset}"
-
         )
 
 
@@ -1600,7 +1667,7 @@ async def fiyat(
         )
 
 
-    except Exception as e:
+    except Exception:
 
         logger.exception(
             "Fiyat hatası"
@@ -1627,7 +1694,8 @@ async def analiz(
             "/analiz THYAO\n"
             "/analiz ALTIN\n"
             "/analiz GUMUS\n"
-            "/analiz BAKIR"
+            "/analiz BAKIR\n"
+            "/analiz BTC"
         )
 
         return
@@ -1715,7 +1783,9 @@ async def analiz(
         f"{result['ema50']:.4f}\n\n"
 
         f"📊 RSI(14): "
-        f"{result['rsi']:.2f}\n\n"
+        f"{result['rsi']:.2f}\n"
+
+        f"{result['rsi_status']}\n\n"
 
         "━━━━━━━━━━━━━━━━\n\n"
 
@@ -1725,10 +1795,13 @@ async def analiz(
         f"{result['macd']:.4f}\n"
 
         f"Signal: "
-        f"{result['signal']:.4f}\n"
+        f"{result['macd_signal']:.4f}\n"
 
         f"Histogram: "
-        f"{result['histogram']:.4f}\n\n"
+        f"{result['histogram']:.4f}\n"
+
+        f"Durum: "
+        f"{result['macd_status']}\n\n"
 
         "━━━━━━━━━━━━━━━━\n\n"
 
@@ -1741,7 +1814,10 @@ async def analiz(
         f"{result['bb_middle']:.4f}\n"
 
         f"Alt: "
-        f"{result['bb_lower']:.4f}\n\n"
+        f"{result['bb_lower']:.4f}\n"
+
+        f"Durum: "
+        f"{result['bb_status']}\n\n"
 
         "━━━━━━━━━━━━━━━━\n\n"
 
@@ -1751,14 +1827,17 @@ async def analiz(
         f"{result['stoch_k']:.2f}\n"
 
         f"%D: "
-        f"{result['stoch_d']:.2f}\n\n"
+        f"{result['stoch_d']:.2f}\n"
+
+        f"Durum: "
+        f"{result['stoch_status']}\n\n"
 
         "━━━━━━━━━━━━━━━━\n\n"
 
         "📊 VOLATİLİTE / HACİM\n\n"
 
         f"ATR(14): "
-        f"{result['atr']:.4f}\n"
+        f"{result['atr']:.4f}\n\n"
 
         f"Hacim / Ortalama: "
         f"{result['volume_ratio']:.2f}x\n\n"
@@ -1803,9 +1882,9 @@ async def analiz(
 
         "📌 Veri kaynağı: Yahoo Finance\n\n"
 
-        "⚠️ Bu sistem yatırım tavsiyesi değildir.\n"
-        "Teknik göstergelere dayalı otomatik analizdir."
+        "⚠️ Bu sistem yatırım tavsiyesi değildir.\n\n"
 
+        "Teknik göstergelere dayalı otomatik analizdir."
     )
 
 
@@ -1868,11 +1947,10 @@ async def metaller(
             f"📊 RSI: "
             f"{result['rsi']:.2f}\n"
 
-            f"⭐ ANKA Skoru: "
+            f"⭐ Anka Skoru: "
             f"{result['score']}/100\n"
 
             f"🤖 {result['signal_text']}"
-
         )
 
 
@@ -1882,12 +1960,9 @@ async def metaller(
 
         "🔥 ÜÇLÜ METAL RAPORU\n\n"
 
-        +
-
-        "\n\n━━━━━━━━━━━━━━━━\n\n".join(
+        + "\n\n━━━━━━━━━━━━━━━━\n\n".join(
             mesajlar
         )
-
     )
 
 
@@ -1906,7 +1981,7 @@ async def firsatlar(
 ):
 
     await update.message.reply_text(
-        "🔥 ANKA fırsat taraması yapıyor..."
+        "🔥 Anka fırsat taraması yapıyor..."
     )
 
 
@@ -1972,7 +2047,6 @@ async def firsatlar(
             f"{result['signal_text']}\n"
 
             f"{result['trend']}"
-
         )
 
 
@@ -1982,12 +2056,9 @@ async def firsatlar(
 
         "🔥 EN GÜÇLÜ TEKNİK GÖRÜNÜMLER\n\n"
 
-        +
-
-        "\n\n━━━━━━━━━━━━━━\n\n".join(
+        + "\n\n━━━━━━━━━━━━━━\n\n".join(
             mesajlar
         )
-
     )
 
 
@@ -2037,7 +2108,6 @@ async def takip(
         f"✅ {asset} takip listesine eklendi.\n\n"
 
         "🦅 Anka takip sistemine aldı."
-
     )
 
 
@@ -2068,9 +2138,7 @@ async def takiplerim(
     await update.message.reply_text(
 
         "🦅 ANKA TAKİP LİSTESİ\n\n"
-
         + liste
-
     )
 
 
@@ -2087,11 +2155,9 @@ async def hakkinda(
 
         "🦅 ANKA YATIRIM ANALİZ\n\n"
 
-        "Teknik göstergeleri kullanarak "
-        "otomatik piyasa analizi yapan "
-        "finans botudur.\n\n"
+        "Otomatik teknik piyasa analiz botu.\n\n"
 
-        "🧠 ANKA TEKNİK MOTORU\n\n"
+        "🧠 ANALİZ MOTORU\n\n"
 
         "EMA20\n"
         "EMA50\n"
@@ -2103,21 +2169,12 @@ async def hakkinda(
         "Hacim\n"
         "Destek / Direnç\n\n"
 
-        "⭐ Anka Skoru: 0-100\n\n"
+        "⭐ ANKA SKORU: 0-100\n\n"
 
-        "📊 Sabit skor sistemi:\n"
-
-        "EMA/Fiyat: 15\n"
-        "EMA Trend: 15\n"
-        "RSI: 15\n"
-        "MACD: 15\n"
-        "Histogram: 10\n"
-        "Bollinger: 10\n"
-        "Stochastic: 10\n"
-        "Destek/Direnç: 10\n\n"
+        "Skor sistemi sabit ağırlıklı olarak "
+        "hesaplanmaktadır.\n\n"
 
         "⚠️ Yatırım tavsiyesi değildir."
-
     )
 
 
@@ -2136,116 +2193,97 @@ def main():
         return
 
 
-    try:
-
-        app = (
-            Application
-            .builder()
-            .token(
-                TELEGRAM_TOKEN
-            )
-            .build()
+    app = (
+        Application
+        .builder()
+        .token(
+            TELEGRAM_TOKEN
         )
+        .build()
+    )
 
 
-        # ====================================================
-        # KOMUTLAR
-        # ====================================================
+    # ========================================================
+    # KOMUTLAR
+    # ========================================================
 
-        app.add_handler(
-            CommandHandler(
-                "start",
-                start
-            )
+    app.add_handler(
+        CommandHandler(
+            "start",
+            start
         )
+    )
 
-
-        app.add_handler(
-            CommandHandler(
-                "anka",
-                anka
-            )
+    app.add_handler(
+        CommandHandler(
+            "anka",
+            anka
         )
+    )
 
-
-        app.add_handler(
-            CommandHandler(
-                "test",
-                test
-            )
+    app.add_handler(
+        CommandHandler(
+            "test",
+            test
         )
+    )
 
-
-        app.add_handler(
-            CommandHandler(
-                "fiyat",
-                fiyat
-            )
+    app.add_handler(
+        CommandHandler(
+            "fiyat",
+            fiyat
         )
+    )
 
-
-        app.add_handler(
-            CommandHandler(
-                "analiz",
-                analiz
-            )
+    app.add_handler(
+        CommandHandler(
+            "analiz",
+            analiz
         )
+    )
 
-
-        app.add_handler(
-            CommandHandler(
-                "metaller",
-                metaller
-            )
+    app.add_handler(
+        CommandHandler(
+            "metaller",
+            metaller
         )
+    )
 
-
-        app.add_handler(
-            CommandHandler(
-                "firsatlar",
-                firsatlar
-            )
+    app.add_handler(
+        CommandHandler(
+            "firsatlar",
+            firsatlar
         )
+    )
 
-
-        app.add_handler(
-            CommandHandler(
-                "takip",
-                takip
-            )
+    app.add_handler(
+        CommandHandler(
+            "takip",
+            takip
         )
+    )
 
-
-        app.add_handler(
-            CommandHandler(
-                "takiplerim",
-                takiplerim
-            )
+    app.add_handler(
+        CommandHandler(
+            "takiplerim",
+            takiplerim
         )
+    )
 
-
-        app.add_handler(
-            CommandHandler(
-                "hakkinda",
-                hakkinda
-            )
+    app.add_handler(
+        CommandHandler(
+            "hakkinda",
+            hakkinda
         )
+    )
 
 
-        print(
-            "🦅 ANKA YATIRIM ANALİZ BAŞLATILDI"
-        )
+    print(
+        "🦅 ANKA YATIRIM ANALİZ BAŞLATILDI"
+    )
 
 
-        app.run_polling()
-
-
-    except Exception as e:
-
-        logger.exception(
-            "Bot başlatılırken hata oluştu: %s",
-            e
-        )
+    app.run_polling()
 
 
 # ============================================================
