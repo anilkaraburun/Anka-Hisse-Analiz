@@ -104,12 +104,22 @@ yeni nesil analiz botu.
 /fiyat USDTRY
 /fiyat BTC
 
+/analiz THYAO
+/analiz ALTIN
+/analiz GUMUS
+/analiz BAKIR
+/analiz USDTRY
+/analiz BTC
+
 /test
 
 ━━━━━━━━━━━━━━━━━━
 
-🚀 Teknik analiz sistemi
-sonraki aşamada eklenecek.
+🧠 Teknik analiz V1 aktif.
+
+RSI + EMA20 + EMA50
+ile temel teknik görünüm
+hesaplanmaktadır.
 """
 
     await update.message.reply_text(mesaj)
@@ -146,14 +156,18 @@ async def test(
 # VERİ AL
 # ============================================================
 
-def get_price_data(symbol):
+def get_data(
+    symbol,
+    period="6mo",
+    interval="1d"
+):
 
     try:
 
         data = yf.download(
             symbol,
-            period="5d",
-            interval="1d",
+            period=period,
+            interval=interval,
             auto_adjust=False,
             progress=False,
             threads=False
@@ -172,6 +186,352 @@ def get_price_data(symbol):
         )
 
         return None
+
+
+# ============================================================
+# CLOSE SERİSİNİ GÜVENLİ AL
+# ============================================================
+
+def get_close_series(data):
+
+    try:
+
+        close = data["Close"]
+
+        # MultiIndex / DataFrame ise
+        # ilk sütunu al
+
+        if hasattr(close, "columns"):
+
+            close = close.iloc[:, 0]
+
+        close = close.dropna()
+
+        return close
+
+    except Exception as e:
+
+        logger.error(
+            "Close verisi alınamadı: %s",
+            e
+        )
+
+        return None
+
+
+# ============================================================
+# EMA
+# ============================================================
+
+def calculate_ema(
+    series,
+    period
+):
+
+    return series.ewm(
+        span=period,
+        adjust=False
+    ).mean()
+
+
+# ============================================================
+# RSI
+# ============================================================
+
+def calculate_rsi(
+    series,
+    period=14
+):
+
+    delta = series.diff()
+
+    gain = delta.clip(
+        lower=0
+    )
+
+    loss = -delta.clip(
+        upper=0
+    )
+
+    average_gain = gain.ewm(
+        alpha=1 / period,
+        min_periods=period,
+        adjust=False
+    ).mean()
+
+    average_loss = loss.ewm(
+        alpha=1 / period,
+        min_periods=period,
+        adjust=False
+    ).mean()
+
+    rs = (
+        average_gain
+        / average_loss
+    )
+
+    rsi = (
+        100
+        - (
+            100
+            / (1 + rs)
+        )
+    )
+
+    return rsi
+
+
+# ============================================================
+# TEKNİK ANALİZ
+# ============================================================
+
+def technical_analysis(symbol):
+
+    data = get_data(
+        symbol,
+        period="6mo",
+        interval="1d"
+    )
+
+    if data is None:
+
+        return None
+
+
+    close = get_close_series(
+        data
+    )
+
+
+    if close is None:
+
+        return None
+
+
+    if len(close) < 50:
+
+        return None
+
+
+    # ========================================================
+    # GÜNCEL FİYAT
+    # ========================================================
+
+    current_price = float(
+        close.iloc[-1]
+    )
+
+
+    # ========================================================
+    # EMA
+    # ========================================================
+
+    ema20_series = calculate_ema(
+        close,
+        20
+    )
+
+    ema50_series = calculate_ema(
+        close,
+        50
+    )
+
+
+    ema20 = float(
+        ema20_series.iloc[-1]
+    )
+
+    ema50 = float(
+        ema50_series.iloc[-1]
+    )
+
+
+    # ========================================================
+    # RSI
+    # ========================================================
+
+    rsi_series = calculate_rsi(
+        close,
+        14
+    )
+
+    rsi = float(
+        rsi_series.iloc[-1]
+    )
+
+
+    # ========================================================
+    # ANKA SKORU
+    # ========================================================
+
+    score = 50
+
+    reasons = []
+
+
+    # --------------------------------------------------------
+    # FİYAT - EMA20
+    # --------------------------------------------------------
+
+    if current_price > ema20:
+
+        score += 10
+
+        reasons.append(
+            "Fiyat EMA20 üzerinde"
+        )
+
+    else:
+
+        score -= 10
+
+        reasons.append(
+            "Fiyat EMA20 altında"
+        )
+
+
+    # --------------------------------------------------------
+    # EMA20 - EMA50
+    # --------------------------------------------------------
+
+    if ema20 > ema50:
+
+        score += 15
+
+        reasons.append(
+            "EMA20, EMA50 üzerinde"
+        )
+
+    else:
+
+        score -= 15
+
+        reasons.append(
+            "EMA20, EMA50 altında"
+        )
+
+
+    # --------------------------------------------------------
+    # RSI
+    # --------------------------------------------------------
+
+    if 50 <= rsi < 70:
+
+        score += 15
+
+        reasons.append(
+            "RSI pozitif bölgede"
+        )
+
+    elif 70 <= rsi <= 100:
+
+        score += 5
+
+        reasons.append(
+            "RSI yüksek / aşırı alım bölgesi"
+        )
+
+    elif 30 < rsi < 50:
+
+        score -= 5
+
+        reasons.append(
+            "RSI zayıf bölgede"
+        )
+
+    elif 0 <= rsi <= 30:
+
+        score -= 10
+
+        reasons.append(
+            "RSI aşırı satım bölgesinde"
+        )
+
+
+    # ========================================================
+    # SKOR SINIRI
+    # ========================================================
+
+    score = max(
+        0,
+        min(
+            100,
+            score
+        )
+    )
+
+
+    # ========================================================
+    # SİNYAL
+    # ========================================================
+
+    if score >= 75:
+
+        signal = "🔥 GÜÇLÜ AL"
+
+    elif score >= 60:
+
+        signal = "🟢 AL"
+
+    elif score >= 40:
+
+        signal = "🟡 TUT"
+
+    else:
+
+        signal = "🔴 SAT"
+
+
+    # ========================================================
+    # TREND
+    # ========================================================
+
+    if (
+        current_price > ema20
+        and ema20 > ema50
+    ):
+
+        trend = "📈 GÜÇLÜ YÜKSELİŞ"
+
+    elif current_price > ema20:
+
+        trend = "📈 YÜKSELİŞ"
+
+    elif (
+        current_price < ema20
+        and ema20 < ema50
+    ):
+
+        trend = "📉 GÜÇLÜ DÜŞÜŞ"
+
+    else:
+
+        trend = "➡️ YATAY / KARARSIZ"
+
+
+    # ========================================================
+    # SONUÇ
+    # ========================================================
+
+    return {
+
+        "price": current_price,
+
+        "ema20": ema20,
+
+        "ema50": ema50,
+
+        "rsi": rsi,
+
+        "score": score,
+
+        "signal": signal,
+
+        "trend": trend,
+
+        "reasons": reasons
+
+    }
 
 
 # ============================================================
@@ -203,14 +563,7 @@ async def fiyat(
     if asset not in ASSETS:
 
         await update.message.reply_text(
-            "❌ Bu varlık sistemde bulunamadı.\n\n"
-            "Örnekler:\n"
-            "THYAO\n"
-            "ALTIN\n"
-            "GUMUS\n"
-            "BAKIR\n"
-            "USDTRY\n"
-            "BTC"
+            "❌ Bu varlık sistemde bulunamadı."
         )
 
         return
@@ -224,8 +577,10 @@ async def fiyat(
     )
 
 
-    data = get_price_data(
-        info["symbol"]
+    data = get_data(
+        info["symbol"],
+        period="5d",
+        interval="1d"
     )
 
 
@@ -240,12 +595,6 @@ async def fiyat(
 
     try:
 
-        # ====================================================
-        # YAHOO FINANCE BAZEN MULTIINDEX DÖNDÜRÜYOR.
-        # BU NEDENLE Close / High / Low DEĞERLERİNİ
-        # GÜVENLİ ŞEKİLDE ALIYORUZ.
-        # ====================================================
-
         close_data = data["Close"]
 
         high_data = data["High"]
@@ -253,22 +602,29 @@ async def fiyat(
         low_data = data["Low"]
 
 
-        # Eğer DataFrame geldiyse ilk sütunu al
-
-        if hasattr(close_data, "columns"):
+        if hasattr(
+            close_data,
+            "columns"
+        ):
 
             close_data = close_data.iloc[:, 0]
 
-        if hasattr(high_data, "columns"):
+
+        if hasattr(
+            high_data,
+            "columns"
+        ):
 
             high_data = high_data.iloc[:, 0]
 
-        if hasattr(low_data, "columns"):
+
+        if hasattr(
+            low_data,
+            "columns"
+        ):
 
             low_data = low_data.iloc[:, 0]
 
-
-        # NaN değerleri temizle
 
         close_data = close_data.dropna()
 
@@ -276,8 +632,6 @@ async def fiyat(
 
         low_data = low_data.dropna()
 
-
-        # Yeterli veri yoksa
 
         if len(close_data) == 0:
 
@@ -288,14 +642,10 @@ async def fiyat(
             return
 
 
-        # Güncel fiyat
-
         current = float(
             close_data.iloc[-1]
         )
 
-
-        # Önceki kapanış
 
         if len(close_data) >= 2:
 
@@ -308,12 +658,13 @@ async def fiyat(
             previous = current
 
 
-        # Günlük değişim
-
         if previous != 0:
 
             change = (
-                (current - previous)
+                (
+                    current
+                    - previous
+                )
                 / previous
                 * 100
             )
@@ -323,21 +674,14 @@ async def fiyat(
             change = 0
 
 
-        # Gün içi yüksek
-
         high = float(
             high_data.iloc[-1]
         )
-
-
-        # Gün içi düşük
 
         low = float(
             low_data.iloc[-1]
         )
 
-
-        # Yön
 
         if change > 0:
 
@@ -351,10 +695,6 @@ async def fiyat(
 
             direction = "🟡"
 
-
-        # ====================================================
-        # SONUÇ
-        # ====================================================
 
         mesaj = (
 
@@ -378,10 +718,7 @@ async def fiyat(
             "📌 Veri kaynağı: Yahoo Finance\n\n"
 
             "⚠️ Bu aşamada yalnızca fiyat "
-            "verisi gösterilmektedir.\n\n"
-
-            "🚀 Teknik analiz motoru "
-            "sonraki aşamada eklenecek."
+            "verisi gösterilmektedir."
         )
 
 
@@ -400,9 +737,123 @@ async def fiyat(
 
         await update.message.reply_text(
             "❌ Fiyat verisi işlenirken "
-            "bir hata oluştu.\n\n"
-            "Railway loglarını kontrol ediyoruz."
+            "bir hata oluştu."
         )
+
+
+# ============================================================
+# ANALİZ KOMUTU
+# ============================================================
+
+async def analiz(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    if not context.args:
+
+        await update.message.reply_text(
+            "❌ Varlık belirtmelisin.\n\n"
+            "Örnek:\n"
+            "/analiz THYAO"
+        )
+
+        return
+
+
+    asset = context.args[0].upper()
+
+
+    if asset not in ASSETS:
+
+        await update.message.reply_text(
+            "❌ Bu varlık sistemde bulunamadı."
+        )
+
+        return
+
+
+    info = ASSETS[asset]
+
+
+    await update.message.reply_text(
+        f"🧠 {info['name']} teknik olarak analiz ediliyor..."
+    )
+
+
+    result = technical_analysis(
+        info["symbol"]
+    )
+
+
+    if result is None:
+
+        await update.message.reply_text(
+            "❌ Teknik analiz için yeterli "
+            "veri alınamadı."
+        )
+
+        return
+
+
+    reasons_text = "\n".join(
+        f"• {reason}"
+        for reason in result["reasons"]
+    )
+
+
+    mesaj = (
+
+        "🦅 ANKA YATIRIM ANALİZ\n\n"
+
+        f"📊 {asset}\n"
+        f"{info['name']}\n\n"
+
+        "━━━━━━━━━━━━━━━━\n\n"
+
+        "🧠 ANKA TEKNİK ANALİZ V1\n\n"
+
+        f"💰 Fiyat: "
+        f"{result['price']:.4f}\n\n"
+
+        f"📐 EMA20: "
+        f"{result['ema20']:.4f}\n"
+
+        f"📐 EMA50: "
+        f"{result['ema50']:.4f}\n\n"
+
+        f"📊 RSI(14): "
+        f"{result['rsi']:.2f}\n\n"
+
+        f"📈 Trend:\n"
+        f"{result['trend']}\n\n"
+
+        "━━━━━━━━━━━━━━━━\n\n"
+
+        f"⭐ ANKA SKORU: "
+        f"{result['score']}/100\n\n"
+
+        f"🤖 SİNYAL:\n"
+        f"{result['signal']}\n\n"
+
+        "━━━━━━━━━━━━━━━━\n\n"
+
+        "🔍 GÖSTERGE DEĞERLENDİRMESİ\n\n"
+
+        f"{reasons_text}\n\n"
+
+        "━━━━━━━━━━━━━━━━\n\n"
+
+        "⚠️ Bu sistem yatırım tavsiyesi "
+        "değildir. Teknik göstergelere dayalı "
+        "otomatik analizdir."
+
+    )
+
+
+    await update.message.reply_text(
+        mesaj
+    )
 
 
 # ============================================================
@@ -428,7 +879,9 @@ def main():
     )
 
 
-    # Komutlar
+    # --------------------------------------------------------
+    # KOMUTLAR
+    # --------------------------------------------------------
 
     app.add_handler(
         CommandHandler(
@@ -458,6 +911,14 @@ def main():
         CommandHandler(
             "fiyat",
             fiyat
+        )
+    )
+
+
+    app.add_handler(
+        CommandHandler(
+            "analiz",
+            analiz
         )
     )
 
