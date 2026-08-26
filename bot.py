@@ -1,4 +1,5 @@
 import os
+import logging
 import yfinance as yf
 
 from telegram import Update
@@ -9,60 +10,65 @@ from telegram.ext import (
 )
 
 
-# =========================================================
+# ============================================================
 # AYARLAR
-# =========================================================
+# ============================================================
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 
-# =========================================================
-# VARLIK KODLARI
-# =========================================================
+# ============================================================
+# LOG
+# ============================================================
+
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# VARLIKLAR
+# ============================================================
 
 ASSETS = {
+    "THYAO": {
+        "symbol": "THYAO.IS",
+        "name": "Türk Hava Yolları"
+    },
 
-    # 🇹🇷 BIST
-    "THYAO": "THYAO.IS",
-    "ASELS": "ASELS.IS",
-    "TUPRS": "TUPRS.IS",
-    "BIMAS": "BIMAS.IS",
-    "EREGL": "EREGL.IS",
-    "GARAN": "GARAN.IS",
-    "AKBNK": "AKBNK.IS",
-    "YKBNK": "YKBNK.IS",
-    "SISE": "SISE.IS",
-    "KCHOL": "KCHOL.IS",
+    "ALTIN": {
+        "symbol": "GC=F",
+        "name": "Altın"
+    },
 
-    # 🇺🇸 ABD
-    "AAPL": "AAPL",
-    "TSLA": "TSLA",
-    "NVDA": "NVDA",
-    "MSFT": "MSFT",
-    "AMZN": "AMZN",
-    "GOOGL": "GOOGL",
+    "GUMUS": {
+        "symbol": "SI=F",
+        "name": "Gümüş"
+    },
 
-    # 🥇 EMTİA
-    "ALTIN": "GC=F",
-    "GUMUS": "SI=F",
-    "BAKIR": "HG=F",
-    "PETROL": "CL=F",
+    "BAKIR": {
+        "symbol": "HG=F",
+        "name": "Bakır"
+    },
 
-    # 💵 DÖVİZ
-    "USDTRY": "TRY=X",
-    "EURTRY": "EURTRY=X",
-    "EURUSD": "EURUSD=X",
-    "GBPUSD": "GBPUSD=X",
+    "USDTRY": {
+        "symbol": "TRY=X",
+        "name": "Dolar/TL"
+    },
 
-    # ₿ KRİPTO
-    "BTC": "BTC-USD",
-    "ETH": "ETH-USD",
+    "BTC": {
+        "symbol": "BTC-USD",
+        "name": "Bitcoin"
+    }
 }
 
 
-# =========================================================
-# ANA MENÜ
-# =========================================================
+# ============================================================
+# START
+# ============================================================
 
 async def start(
     update: Update,
@@ -90,8 +96,11 @@ yeni nesil analiz botu.
 📌 KOMUTLAR
 
 /anka
+
 /fiyat THYAO
 /fiyat ALTIN
+/fiyat GUMUS
+/fiyat BAKIR
 /fiyat USDTRY
 /fiyat BTC
 
@@ -100,55 +109,27 @@ yeni nesil analiz botu.
 ━━━━━━━━━━━━━━━━━━
 
 🚀 Teknik analiz sistemi
-yakında eklenecek.
+sonraki aşamada eklenecek.
 """
 
     await update.message.reply_text(mesaj)
 
 
-# =========================================================
-# ANKA MENÜ
-# =========================================================
+# ============================================================
+# ANKA
+# ============================================================
 
 async def anka(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
 
-    mesaj = """
-🦅 ANKA YATIRIM ANALİZ
-
-📊 Fiyat sorgulama:
-
-/fiyat THYAO
-/fiyat ASELS
-/fiyat ALTIN
-/fiyat GUMUS
-/fiyat USDTRY
-/fiyat EURTRY
-/fiyat BTC
-
-━━━━━━━━━━━━━━━━━━
-
-🔜 Yakında:
-
-📈 RSI
-📊 MACD
-📉 EMA
-🎯 Destek / Direnç
-🟢 AL
-🟡 TUT
-🔴 SAT
-🔥 Fırsat taraması
-🚨 Alarm sistemi
-"""
-
-    await update.message.reply_text(mesaj)
+    await start(update, context)
 
 
-# =========================================================
+# ============================================================
 # TEST
-# =========================================================
+# ============================================================
 
 async def test(
     update: Update,
@@ -157,13 +138,45 @@ async def test(
 
     await update.message.reply_text(
         "✅ ANKA YATIRIM ANALİZ çalışıyor!\n\n"
-        "Telegram bağlantısı başarılı."
+        "Telegram bağlantısı başarılı. 🦅"
     )
 
 
-# =========================================================
+# ============================================================
+# VERİ AL
+# ============================================================
+
+def get_price_data(symbol):
+
+    try:
+
+        data = yf.download(
+            symbol,
+            period="5d",
+            interval="1d",
+            auto_adjust=False,
+            progress=False,
+            threads=False
+        )
+
+        if data is None or data.empty:
+            return None
+
+        return data
+
+    except Exception as e:
+
+        logger.error(
+            "Yahoo Finance veri hatası: %s",
+            e
+        )
+
+        return None
+
+
+# ============================================================
 # FİYAT
-# =========================================================
+# ============================================================
 
 async def fiyat(
     update: Update,
@@ -173,81 +186,158 @@ async def fiyat(
     if not context.args:
 
         await update.message.reply_text(
-            "❗ Kullanım:\n\n"
-            "/fiyat THYAO\n"
-            "/fiyat ALTIN\n"
-            "/fiyat USDTRY\n"
-            "/fiyat BTC"
-        )
-
-        return
-
-
-    symbol = context.args[0].upper()
-
-    if symbol not in ASSETS:
-
-        await update.message.reply_text(
-
-            "❌ Bu varlık henüz tanımlı değil.\n\n"
-
+            "❌ Varlık belirtmelisin.\n\n"
             "Örnek:\n"
             "/fiyat THYAO\n"
             "/fiyat ALTIN\n"
-            "/fiyat GUMUS\n"
             "/fiyat USDTRY\n"
             "/fiyat BTC"
-
         )
 
         return
 
 
-    yahoo_symbol = ASSETS[symbol]
+    asset = context.args[0].upper()
+
+
+    if asset not in ASSETS:
+
+        await update.message.reply_text(
+            "❌ Bu varlık sistemde bulunamadı.\n\n"
+            "Örnekler:\n"
+            "THYAO\n"
+            "ALTIN\n"
+            "GUMUS\n"
+            "BAKIR\n"
+            "USDTRY\n"
+            "BTC"
+        )
+
+        return
+
+
+    info = ASSETS[asset]
 
 
     await update.message.reply_text(
-        f"🔍 {symbol} verisi alınıyor..."
+        f"🔎 {info['name']} verisi alınıyor..."
     )
+
+
+    data = get_price_data(
+        info["symbol"]
+    )
+
+
+    if data is None:
+
+        await update.message.reply_text(
+            "❌ Yahoo Finance'den veri alınamadı."
+        )
+
+        return
 
 
     try:
 
-        ticker = yf.Ticker(yahoo_symbol)
+        # ====================================================
+        # YAHOO FINANCE BAZEN MULTIINDEX DÖNDÜRÜYOR.
+        # BU NEDENLE Close / High / Low DEĞERLERİNİ
+        # GÜVENLİ ŞEKİLDE ALIYORUZ.
+        # ====================================================
 
-        data = ticker.history(
-            period="5d",
-            interval="1d"
-        )
+        close_data = data["Close"]
+
+        high_data = data["High"]
+
+        low_data = data["Low"]
 
 
-        if data.empty:
+        # Eğer DataFrame geldiyse ilk sütunu al
+
+        if hasattr(close_data, "columns"):
+
+            close_data = close_data.iloc[:, 0]
+
+        if hasattr(high_data, "columns"):
+
+            high_data = high_data.iloc[:, 0]
+
+        if hasattr(low_data, "columns"):
+
+            low_data = low_data.iloc[:, 0]
+
+
+        # NaN değerleri temizle
+
+        close_data = close_data.dropna()
+
+        high_data = high_data.dropna()
+
+        low_data = low_data.dropna()
+
+
+        # Yeterli veri yoksa
+
+        if len(close_data) == 0:
 
             await update.message.reply_text(
-                f"❌ {symbol} için veri bulunamadı."
+                "❌ Fiyat verisi boş geldi."
             )
 
             return
 
 
-        last = data.iloc[-1]
+        # Güncel fiyat
 
-
-        close = float(last["Close"])
-
-        open_price = float(last["Open"])
-
-        high = float(last["High"])
-
-        low = float(last["Low"])
-
-
-        change = (
-            (close - open_price)
-            / open_price
-            * 100
+        current = float(
+            close_data.iloc[-1]
         )
 
+
+        # Önceki kapanış
+
+        if len(close_data) >= 2:
+
+            previous = float(
+                close_data.iloc[-2]
+            )
+
+        else:
+
+            previous = current
+
+
+        # Günlük değişim
+
+        if previous != 0:
+
+            change = (
+                (current - previous)
+                / previous
+                * 100
+            )
+
+        else:
+
+            change = 0
+
+
+        # Gün içi yüksek
+
+        high = float(
+            high_data.iloc[-1]
+        )
+
+
+        # Gün içi düşük
+
+        low = float(
+            low_data.iloc[-1]
+        )
+
+
+        # Yön
 
         if change > 0:
 
@@ -262,31 +352,36 @@ async def fiyat(
             direction = "🟡"
 
 
+        # ====================================================
+        # SONUÇ
+        # ====================================================
+
         mesaj = (
 
-            f"🦅 ANKA YATIRIM ANALİZ\n\n"
+            "🦅 ANKA YATIRIM ANALİZ\n\n"
 
-            f"📊 {symbol}\n"
+            f"📊 {asset}\n\n"
 
-            f"💰 Fiyat: {close:.4f}\n\n"
+            f"💰 Fiyat: {current:.4f}\n\n"
 
             f"{direction} Günlük değişim: "
             f"{change:+.2f}%\n\n"
 
-            f"🔺 Gün içi yüksek: {high:.4f}\n"
+            f"🔺 Gün içi yüksek: "
+            f"{high:.4f}\n\n"
 
-            f"🔻 Gün içi düşük: {low:.4f}\n\n"
+            f"🔻 Gün içi düşük: "
+            f"{low:.4f}\n\n"
 
-            f"━━━━━━━━━━━━━━━━\n\n"
+            "━━━━━━━━━━━━━━━━\n\n"
 
-            f"📌 Veri kaynağı: Yahoo Finance\n\n"
+            "📌 Veri kaynağı: Yahoo Finance\n\n"
 
-            f"⚠️ Bu aşamada yalnızca fiyat "
-            f"verisi gösterilmektedir.\n"
+            "⚠️ Bu aşamada yalnızca fiyat "
+            "verisi gösterilmektedir.\n\n"
 
-            f"Teknik analiz motoru sonraki "
-            f"aşamada eklenecek."
-
+            "🚀 Teknik analiz motoru "
+            "sonraki aşamada eklenecek."
         )
 
 
@@ -297,54 +392,22 @@ async def fiyat(
 
     except Exception as e:
 
-        await update.message.reply_text(
-
-            "❌ Veri alınırken hata oluştu.\n\n"
-
-            f"Hata: {str(e)}"
-
+        logger.error(
+            "Fiyat hesaplama hatası: %s",
+            e
         )
 
 
-# =========================================================
-# HAKKINDA
-# =========================================================
-
-async def hakkinda(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
-
-    mesaj = """
-🦅 ANKA YATIRIM ANALİZ
-
-Amaç:
-
-Finansal piyasalardaki varlıkları
-veriye dayalı olarak analiz etmek.
-
-📊 BIST
-🇺🇸 ABD hisseleri
-🥇 Altın
-🥈 Gümüş
-🟠 Bakır
-💵 Döviz
-₿ Kripto
-
-Sistem aşamalı olarak
-geliştirilecektir.
-
-⚠️ Anka Yatırım Analiz yatırım
-danışmanlığı yapmaz.
-Sinyaller yalnızca analiz amaçlıdır.
-"""
-
-    await update.message.reply_text(mesaj)
+        await update.message.reply_text(
+            "❌ Fiyat verisi işlenirken "
+            "bir hata oluştu.\n\n"
+            "Railway loglarını kontrol ediyoruz."
+        )
 
 
-# =========================================================
-# BOTU BAŞLAT
-# =========================================================
+# ============================================================
+# MAIN
+# ============================================================
 
 def main():
 
@@ -352,11 +415,6 @@ def main():
 
         print(
             "❌ TELEGRAM_TOKEN bulunamadı."
-        )
-
-        print(
-            "Railway üzerinde daha sonra "
-            "TELEGRAM_TOKEN değişkeni eklenmelidir."
         )
 
         return
@@ -369,6 +427,8 @@ def main():
         .build()
     )
 
+
+    # Komutlar
 
     app.add_handler(
         CommandHandler(
@@ -402,14 +462,6 @@ def main():
     )
 
 
-    app.add_handler(
-        CommandHandler(
-            "hakkinda",
-            hakkinda
-        )
-    )
-
-
     print(
         "🦅 ANKA YATIRIM ANALİZ BAŞLATILDI"
     )
@@ -418,9 +470,9 @@ def main():
     app.run_polling()
 
 
-# =========================================================
-# ÇALIŞTIR
-# =========================================================
+# ============================================================
+# BAŞLAT
+# ============================================================
 
 if __name__ == "__main__":
 
