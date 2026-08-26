@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 # ============================================================
 
 ASSETS = {
+
     "THYAO": {
         "symbol": "THYAO.IS",
         "name": "Türk Hava Yolları"
@@ -115,11 +116,11 @@ yeni nesil analiz botu.
 
 ━━━━━━━━━━━━━━━━━━
 
-🧠 Teknik analiz V1 aktif.
+🧠 Teknik analiz V2 aktif.
 
 RSI + EMA20 + EMA50
-ile temel teknik görünüm
-hesaplanmaktadır.
+MACD + Bollinger Bandı
+ile teknik görünüm hesaplanmaktadır.
 """
 
     await update.message.reply_text(mesaj)
@@ -174,6 +175,7 @@ def get_data(
         )
 
         if data is None or data.empty:
+
             return None
 
         return data
@@ -189,7 +191,7 @@ def get_data(
 
 
 # ============================================================
-# CLOSE SERİSİNİ GÜVENLİ AL
+# CLOSE SERİSİ
 # ============================================================
 
 def get_close_series(data):
@@ -198,10 +200,10 @@ def get_close_series(data):
 
         close = data["Close"]
 
-        # MultiIndex / DataFrame ise
-        # ilk sütunu al
-
-        if hasattr(close, "columns"):
+        if hasattr(
+            close,
+            "columns"
+        ):
 
             close = close.iloc[:, 0]
 
@@ -272,9 +274,11 @@ def calculate_rsi(
 
     rsi = (
         100
-        - (
+        -
+        (
             100
-            / (1 + rs)
+            /
+            (1 + rs)
         )
     )
 
@@ -282,10 +286,83 @@ def calculate_rsi(
 
 
 # ============================================================
-# TEKNİK ANALİZ
+# MACD
 # ============================================================
 
-def technical_analysis(symbol):
+def calculate_macd(
+    series
+):
+
+    ema12 = calculate_ema(
+        series,
+        12
+    )
+
+    ema26 = calculate_ema(
+        series,
+        26
+    )
+
+    macd = ema12 - ema26
+
+    signal = calculate_ema(
+        macd,
+        9
+    )
+
+    histogram = (
+        macd
+        - signal
+    )
+
+    return (
+        macd,
+        signal,
+        histogram
+    )
+
+
+# ============================================================
+# BOLLINGER BANDI
+# ============================================================
+
+def calculate_bollinger(
+    series,
+    period=20
+):
+
+    middle = series.rolling(
+        period
+    ).mean()
+
+    std = series.rolling(
+        period
+    ).std()
+
+    upper = (
+        middle
+        + (std * 2)
+    )
+
+    lower = (
+        middle
+        - (std * 2)
+    )
+
+    return (
+        middle,
+        upper,
+        lower
+    )
+
+
+# ============================================================
+# TEKNİK ANALİZ V2
+# ============================================================
+
+def technical_analysis(
+    symbol
+):
 
     data = get_data(
         symbol,
@@ -302,7 +379,6 @@ def technical_analysis(symbol):
         data
     )
 
-
     if close is None:
 
         return None
@@ -314,7 +390,7 @@ def technical_analysis(symbol):
 
 
     # ========================================================
-    # GÜNCEL FİYAT
+    # FİYAT
     # ========================================================
 
     current_price = float(
@@ -357,6 +433,48 @@ def technical_analysis(symbol):
 
     rsi = float(
         rsi_series.iloc[-1]
+    )
+
+
+    # ========================================================
+    # MACD
+    # ========================================================
+
+    macd_series, signal_series, histogram_series = (
+        calculate_macd(close)
+    )
+
+    macd = float(
+        macd_series.iloc[-1]
+    )
+
+    macd_signal = float(
+        signal_series.iloc[-1]
+    )
+
+    macd_histogram = float(
+        histogram_series.iloc[-1]
+    )
+
+
+    # ========================================================
+    # BOLLINGER
+    # ========================================================
+
+    bb_middle_series, bb_upper_series, bb_lower_series = (
+        calculate_bollinger(close)
+    )
+
+    bb_middle = float(
+        bb_middle_series.iloc[-1]
+    )
+
+    bb_upper = float(
+        bb_upper_series.iloc[-1]
+    )
+
+    bb_lower = float(
+        bb_lower_series.iloc[-1]
     )
 
 
@@ -417,13 +535,13 @@ def technical_analysis(symbol):
 
     if 50 <= rsi < 70:
 
-        score += 15
+        score += 10
 
         reasons.append(
             "RSI pozitif bölgede"
         )
 
-    elif 70 <= rsi <= 100:
+    elif rsi >= 70:
 
         score += 5
 
@@ -439,12 +557,75 @@ def technical_analysis(symbol):
             "RSI zayıf bölgede"
         )
 
-    elif 0 <= rsi <= 30:
+    else:
 
         score -= 10
 
         reasons.append(
             "RSI aşırı satım bölgesinde"
+        )
+
+
+    # --------------------------------------------------------
+    # MACD
+    # --------------------------------------------------------
+
+    if macd > macd_signal:
+
+        score += 10
+
+        reasons.append(
+            "MACD pozitif"
+        )
+
+    else:
+
+        score -= 10
+
+        reasons.append(
+            "MACD negatif"
+        )
+
+
+    # --------------------------------------------------------
+    # MACD HISTOGRAM
+    # --------------------------------------------------------
+
+    if macd_histogram > 0:
+
+        score += 5
+
+        reasons.append(
+            "MACD histogram pozitif"
+        )
+
+    else:
+
+        score -= 5
+
+        reasons.append(
+            "MACD histogram negatif"
+        )
+
+
+    # --------------------------------------------------------
+    # BOLLINGER
+    # --------------------------------------------------------
+
+    if current_price > bb_middle:
+
+        score += 5
+
+        reasons.append(
+            "Fiyat Bollinger orta bandının üzerinde"
+        )
+
+    else:
+
+        score -= 5
+
+        reasons.append(
+            "Fiyat Bollinger orta bandının altında"
         )
 
 
@@ -465,7 +646,7 @@ def technical_analysis(symbol):
     # SİNYAL
     # ========================================================
 
-    if score >= 75:
+    if score >= 80:
 
         signal = "🔥 GÜÇLÜ AL"
 
@@ -510,6 +691,42 @@ def technical_analysis(symbol):
 
 
     # ========================================================
+    # BOLLINGER DURUMU
+    # ========================================================
+
+    if current_price >= bb_upper:
+
+        bollinger_status = (
+            "🔴 Üst banda çok yakın / üzerinde"
+        )
+
+    elif current_price <= bb_lower:
+
+        bollinger_status = (
+            "🟢 Alt banda çok yakın / altında"
+        )
+
+    else:
+
+        bollinger_status = (
+            "🟡 Bantlar arasında"
+        )
+
+
+    # ========================================================
+    # MACD DURUMU
+    # ========================================================
+
+    if macd > macd_signal:
+
+        macd_status = "🟢 Pozitif"
+
+    else:
+
+        macd_status = "🔴 Negatif"
+
+
+    # ========================================================
     # SONUÇ
     # ========================================================
 
@@ -522,6 +739,22 @@ def technical_analysis(symbol):
         "ema50": ema50,
 
         "rsi": rsi,
+
+        "macd": macd,
+
+        "macd_signal": macd_signal,
+
+        "macd_histogram": macd_histogram,
+
+        "bb_middle": bb_middle,
+
+        "bb_upper": bb_upper,
+
+        "bb_lower": bb_lower,
+
+        "bollinger_status": bollinger_status,
+
+        "macd_status": macd_status,
 
         "score": score,
 
@@ -548,10 +781,7 @@ async def fiyat(
         await update.message.reply_text(
             "❌ Varlık belirtmelisin.\n\n"
             "Örnek:\n"
-            "/fiyat THYAO\n"
-            "/fiyat ALTIN\n"
-            "/fiyat USDTRY\n"
-            "/fiyat BTC"
+            "/fiyat THYAO"
         )
 
         return
@@ -717,8 +947,9 @@ async def fiyat(
 
             "📌 Veri kaynağı: Yahoo Finance\n\n"
 
-            "⚠️ Bu aşamada yalnızca fiyat "
-            "verisi gösterilmektedir."
+            "🧠 Teknik analiz için:\n"
+            f"/analiz {asset}"
+
         )
 
 
@@ -734,7 +965,6 @@ async def fiyat(
             e
         )
 
-
         await update.message.reply_text(
             "❌ Fiyat verisi işlenirken "
             "bir hata oluştu."
@@ -742,7 +972,7 @@ async def fiyat(
 
 
 # ============================================================
-# ANALİZ KOMUTU
+# ANALİZ
 # ============================================================
 
 async def analiz(
@@ -777,7 +1007,7 @@ async def analiz(
 
 
     await update.message.reply_text(
-        f"🧠 {info['name']} teknik olarak analiz ediliyor..."
+        f"🧠 {info['name']} V2 analiz ediliyor..."
     )
 
 
@@ -811,7 +1041,7 @@ async def analiz(
 
         "━━━━━━━━━━━━━━━━\n\n"
 
-        "🧠 ANKA TEKNİK ANALİZ V1\n\n"
+        "🧠 ANKA TEKNİK ANALİZ V2\n\n"
 
         f"💰 Fiyat: "
         f"{result['price']:.4f}\n\n"
@@ -825,15 +1055,49 @@ async def analiz(
         f"📊 RSI(14): "
         f"{result['rsi']:.2f}\n\n"
 
-        f"📈 Trend:\n"
-        f"{result['trend']}\n\n"
+        "━━━━━━━━━━━━━━━━\n\n"
+
+        "📈 MACD\n\n"
+
+        f"MACD: "
+        f"{result['macd']:.4f}\n"
+
+        f"Signal: "
+        f"{result['macd_signal']:.4f}\n"
+
+        f"Histogram: "
+        f"{result['macd_histogram']:.4f}\n"
+
+        f"Durum: "
+        f"{result['macd_status']}\n\n"
 
         "━━━━━━━━━━━━━━━━\n\n"
 
-        f"⭐ ANKA SKORU: "
+        "📊 BOLLINGER BANDI\n\n"
+
+        f"Üst bant: "
+        f"{result['bb_upper']:.4f}\n"
+
+        f"Orta bant: "
+        f"{result['bb_middle']:.4f}\n"
+
+        f"Alt bant: "
+        f"{result['bb_lower']:.4f}\n\n"
+
+        f"Durum: "
+        f"{result['bollinger_status']}\n\n"
+
+        "━━━━━━━━━━━━━━━━\n\n"
+
+        f"📈 Trend:\n"
+        f"{result['trend']}\n\n"
+
+        "⭐ ANKA SKORU:\n"
+
         f"{result['score']}/100\n\n"
 
-        f"🤖 SİNYAL:\n"
+        "🤖 SİNYAL:\n"
+
         f"{result['signal']}\n\n"
 
         "━━━━━━━━━━━━━━━━\n\n"
@@ -879,10 +1143,6 @@ def main():
     )
 
 
-    # --------------------------------------------------------
-    # KOMUTLAR
-    # --------------------------------------------------------
-
     app.add_handler(
         CommandHandler(
             "start",
@@ -924,7 +1184,7 @@ def main():
 
 
     print(
-        "🦅 ANKA YATIRIM ANALİZ BAŞLATILDI"
+        "🦅 ANKA YATIRIM ANALİZ V2 BAŞLATILDI"
     )
 
 
