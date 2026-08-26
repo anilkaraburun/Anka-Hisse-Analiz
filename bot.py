@@ -116,11 +116,15 @@ yeni nesil analiz botu.
 
 ━━━━━━━━━━━━━━━━━━
 
-🧠 Teknik analiz V2 aktif.
+🧠 ANKA Teknik Analiz V3
 
-RSI + EMA20 + EMA50
-MACD + Bollinger Bandı
-ile teknik görünüm hesaplanmaktadır.
+RSI
+EMA20 / EMA50
+MACD
+Bollinger
+Destek / Direnç
+Kırılım teyidi
+Anka Skoru
 """
 
     await update.message.reply_text(mesaj)
@@ -191,7 +195,7 @@ def get_data(
 
 
 # ============================================================
-# CLOSE SERİSİ
+# CLOSE
 # ============================================================
 
 def get_close_series(data):
@@ -207,9 +211,7 @@ def get_close_series(data):
 
             close = close.iloc[:, 0]
 
-        close = close.dropna()
-
-        return close
+        return close.dropna()
 
     except Exception as e:
 
@@ -255,24 +257,21 @@ def calculate_rsi(
         upper=0
     )
 
-    average_gain = gain.ewm(
+    avg_gain = gain.ewm(
         alpha=1 / period,
         min_periods=period,
         adjust=False
     ).mean()
 
-    average_loss = loss.ewm(
+    avg_loss = loss.ewm(
         alpha=1 / period,
         min_periods=period,
         adjust=False
     ).mean()
 
-    rs = (
-        average_gain
-        / average_loss
-    )
+    rs = avg_gain / avg_loss
 
-    rsi = (
+    return (
         100
         -
         (
@@ -282,16 +281,12 @@ def calculate_rsi(
         )
     )
 
-    return rsi
-
 
 # ============================================================
 # MACD
 # ============================================================
 
-def calculate_macd(
-    series
-):
+def calculate_macd(series):
 
     ema12 = calculate_ema(
         series,
@@ -310,10 +305,7 @@ def calculate_macd(
         9
     )
 
-    histogram = (
-        macd
-        - signal
-    )
+    histogram = macd - signal
 
     return (
         macd,
@@ -323,7 +315,7 @@ def calculate_macd(
 
 
 # ============================================================
-# BOLLINGER BANDI
+# BOLLINGER
 # ============================================================
 
 def calculate_bollinger(
@@ -341,12 +333,12 @@ def calculate_bollinger(
 
     upper = (
         middle
-        + (std * 2)
+        + 2 * std
     )
 
     lower = (
         middle
-        - (std * 2)
+        - 2 * std
     )
 
     return (
@@ -357,7 +349,185 @@ def calculate_bollinger(
 
 
 # ============================================================
-# TEKNİK ANALİZ V2
+# DESTEK / DİRENÇ
+# ============================================================
+
+def calculate_support_resistance(
+    data,
+    lookback=20
+):
+
+    try:
+
+        high = data["High"]
+
+        low = data["Low"]
+
+
+        if hasattr(
+            high,
+            "columns"
+        ):
+
+            high = high.iloc[:, 0]
+
+
+        if hasattr(
+            low,
+            "columns"
+        ):
+
+            low = low.iloc[:, 0]
+
+
+        high = high.dropna()
+
+        low = low.dropna()
+
+
+        if len(high) < lookback:
+
+            return None, None
+
+
+        recent_high = high.iloc[
+            -lookback:
+        ]
+
+        recent_low = low.iloc[
+            -lookback:
+        ]
+
+
+        resistance = float(
+            recent_high.max()
+        )
+
+        support = float(
+            recent_low.min()
+        )
+
+
+        return (
+            support,
+            resistance
+        )
+
+
+    except Exception as e:
+
+        logger.error(
+            "Destek direnç hatası: %s",
+            e
+        )
+
+        return None, None
+
+
+# ============================================================
+# KIRILIM KONTROLÜ
+# ============================================================
+
+def check_breakout(
+    data,
+    price,
+    support,
+    resistance
+):
+
+    if support is None or resistance is None:
+
+        return "➡️ Kırılım yok"
+
+
+    try:
+
+        close = get_close_series(
+            data
+        )
+
+        if close is None or len(close) < 3:
+
+            return "➡️ Kırılım yok"
+
+
+        previous_price = float(
+            close.iloc[-2]
+        )
+
+
+        # ----------------------------------------------------
+        # DİRENÇ KIRILIMI
+        # ----------------------------------------------------
+
+        if (
+            previous_price <= resistance
+            and price > resistance
+        ):
+
+            return "🚀 DİRENÇ KIRILDI"
+
+
+        # ----------------------------------------------------
+        # DESTEK KIRILIMI
+        # ----------------------------------------------------
+
+        if (
+            previous_price >= support
+            and price < support
+        ):
+
+            return "🔻 DESTEK KIRILDI"
+
+
+        # ----------------------------------------------------
+        # DİRENCE YAKIN
+        # ----------------------------------------------------
+
+        resistance_distance = (
+            (resistance - price)
+            / price
+            * 100
+        )
+
+
+        if (
+            resistance_distance >= 0
+            and resistance_distance <= 1
+        ):
+
+            return "⚠️ DİRENCE YAKIN"
+
+
+        # ----------------------------------------------------
+        # DESTEĞE YAKIN
+        # ----------------------------------------------------
+
+        support_distance = (
+            (price - support)
+            / price
+            * 100
+        )
+
+
+        if (
+            support_distance >= 0
+            and support_distance <= 1
+        ):
+
+            return "🟢 DESTEĞE YAKIN"
+
+
+        return "➡️ Kırılım yok"
+
+
+    except Exception:
+
+        return "➡️ Kırılım yok"
+
+
+# ============================================================
+# TEKNİK ANALİZ V3
 # ============================================================
 
 def technical_analysis(
@@ -370,6 +540,7 @@ def technical_analysis(
         interval="1d"
     )
 
+
     if data is None:
 
         return None
@@ -378,6 +549,7 @@ def technical_analysis(
     close = get_close_series(
         data
     )
+
 
     if close is None:
 
@@ -393,7 +565,7 @@ def technical_analysis(
     # FİYAT
     # ========================================================
 
-    current_price = float(
+    price = float(
         close.iloc[-1]
     )
 
@@ -427,8 +599,7 @@ def technical_analysis(
     # ========================================================
 
     rsi_series = calculate_rsi(
-        close,
-        14
+        close
     )
 
     rsi = float(
@@ -444,6 +615,7 @@ def technical_analysis(
         calculate_macd(close)
     )
 
+
     macd = float(
         macd_series.iloc[-1]
     )
@@ -452,7 +624,7 @@ def technical_analysis(
         signal_series.iloc[-1]
     )
 
-    macd_histogram = float(
+    histogram = float(
         histogram_series.iloc[-1]
     )
 
@@ -464,6 +636,7 @@ def technical_analysis(
     bb_middle_series, bb_upper_series, bb_lower_series = (
         calculate_bollinger(close)
     )
+
 
     bb_middle = float(
         bb_middle_series.iloc[-1]
@@ -479,7 +652,42 @@ def technical_analysis(
 
 
     # ========================================================
+    # DESTEK / DİRENÇ
+    # ========================================================
+
+    support, resistance = (
+        calculate_support_resistance(
+            data,
+            20
+        )
+    )
+
+
+    # ========================================================
+    # KIRILIM
+    # ========================================================
+
+    breakout = check_breakout(
+        data,
+        price,
+        support,
+        resistance
+    )
+
+
+    # ========================================================
     # ANKA SKORU
+    #
+    # 50 = NÖTR
+    #
+    # Trend       ±25
+    # RSI         ±15
+    # MACD        ±20
+    # Bollinger   ±10
+    # Kırılım     ±30
+    #
+    # Daha sonra ağırlıkları
+    # backtest ile optimize edeceğiz.
     # ========================================================
 
     score = 50
@@ -487,13 +695,35 @@ def technical_analysis(
     reasons = []
 
 
-    # --------------------------------------------------------
-    # FİYAT - EMA20
-    # --------------------------------------------------------
+    # ========================================================
+    # TREND
+    # ========================================================
 
-    if current_price > ema20:
+    if (
+        price > ema20
+        and ema20 > ema50
+    ):
 
-        score += 10
+        score += 25
+
+        reasons.append(
+            "Güçlü yükseliş trendi"
+        )
+
+    elif (
+        price < ema20
+        and ema20 < ema50
+    ):
+
+        score -= 25
+
+        reasons.append(
+            "Güçlü düşüş trendi"
+        )
+
+    elif price > ema20:
+
+        score += 12
 
         reasons.append(
             "Fiyat EMA20 üzerinde"
@@ -501,60 +731,39 @@ def technical_analysis(
 
     else:
 
-        score -= 10
+        score -= 12
 
         reasons.append(
             "Fiyat EMA20 altında"
         )
 
 
-    # --------------------------------------------------------
-    # EMA20 - EMA50
-    # --------------------------------------------------------
+    # ========================================================
+    # RSI
+    # ========================================================
 
-    if ema20 > ema50:
+    if 50 <= rsi < 70:
 
         score += 15
 
         reasons.append(
-            "EMA20, EMA50 üzerinde"
+            "RSI pozitif"
         )
 
-    else:
-
-        score -= 15
-
-        reasons.append(
-            "EMA20, EMA50 altında"
-        )
-
-
-    # --------------------------------------------------------
-    # RSI
-    # --------------------------------------------------------
-
-    if 50 <= rsi < 70:
-
-        score += 10
-
-        reasons.append(
-            "RSI pozitif bölgede"
-        )
-
-    elif rsi >= 70:
+    elif 70 <= rsi:
 
         score += 5
 
         reasons.append(
-            "RSI yüksek / aşırı alım bölgesi"
+            "RSI yüksek / aşırı alım"
         )
 
     elif 30 < rsi < 50:
 
-        score -= 5
+        score -= 7
 
         reasons.append(
-            "RSI zayıf bölgede"
+            "RSI zayıf"
         )
 
     else:
@@ -562,17 +771,17 @@ def technical_analysis(
         score -= 10
 
         reasons.append(
-            "RSI aşırı satım bölgesinde"
+            "RSI aşırı satım"
         )
 
 
-    # --------------------------------------------------------
+    # ========================================================
     # MACD
-    # --------------------------------------------------------
+    # ========================================================
 
     if macd > macd_signal:
 
-        score += 10
+        score += 15
 
         reasons.append(
             "MACD pozitif"
@@ -580,18 +789,18 @@ def technical_analysis(
 
     else:
 
-        score -= 10
+        score -= 15
 
         reasons.append(
             "MACD negatif"
         )
 
 
-    # --------------------------------------------------------
+    # ========================================================
     # MACD HISTOGRAM
-    # --------------------------------------------------------
+    # ========================================================
 
-    if macd_histogram > 0:
+    if histogram > 0:
 
         score += 5
 
@@ -608,24 +817,64 @@ def technical_analysis(
         )
 
 
-    # --------------------------------------------------------
+    # ========================================================
     # BOLLINGER
-    # --------------------------------------------------------
+    # ========================================================
 
-    if current_price > bb_middle:
+    if (
+        price > bb_middle
+        and price < bb_upper
+    ):
 
         score += 5
 
         reasons.append(
-            "Fiyat Bollinger orta bandının üzerinde"
+            "Fiyat Bollinger orta bandı üzerinde"
         )
 
-    else:
+    elif price < bb_middle:
 
         score -= 5
 
         reasons.append(
-            "Fiyat Bollinger orta bandının altında"
+            "Fiyat Bollinger orta bandı altında"
+        )
+
+
+    # ========================================================
+    # KIRILIM
+    # ========================================================
+
+    if breakout == "🚀 DİRENÇ KIRILDI":
+
+        score += 30
+
+        reasons.append(
+            "Direnç yukarı kırıldı"
+        )
+
+    elif breakout == "🔻 DESTEK KIRILDI":
+
+        score -= 30
+
+        reasons.append(
+            "Destek aşağı kırıldı"
+        )
+
+    elif breakout == "⚠️ DİRENCE YAKIN":
+
+        score += 3
+
+        reasons.append(
+            "Fiyat dirence yaklaşıyor"
+        )
+
+    elif breakout == "🟢 DESTEĞE YAKIN":
+
+        score += 3
+
+        reasons.append(
+            "Fiyat desteğe yaklaşıyor"
         )
 
 
@@ -664,22 +913,22 @@ def technical_analysis(
 
 
     # ========================================================
-    # TREND
+    # TREND METNİ
     # ========================================================
 
     if (
-        current_price > ema20
+        price > ema20
         and ema20 > ema50
     ):
 
         trend = "📈 GÜÇLÜ YÜKSELİŞ"
 
-    elif current_price > ema20:
+    elif price > ema20:
 
         trend = "📈 YÜKSELİŞ"
 
     elif (
-        current_price < ema20
+        price < ema20
         and ema20 < ema50
     ):
 
@@ -691,48 +940,12 @@ def technical_analysis(
 
 
     # ========================================================
-    # BOLLINGER DURUMU
-    # ========================================================
-
-    if current_price >= bb_upper:
-
-        bollinger_status = (
-            "🔴 Üst banda çok yakın / üzerinde"
-        )
-
-    elif current_price <= bb_lower:
-
-        bollinger_status = (
-            "🟢 Alt banda çok yakın / altında"
-        )
-
-    else:
-
-        bollinger_status = (
-            "🟡 Bantlar arasında"
-        )
-
-
-    # ========================================================
-    # MACD DURUMU
-    # ========================================================
-
-    if macd > macd_signal:
-
-        macd_status = "🟢 Pozitif"
-
-    else:
-
-        macd_status = "🔴 Negatif"
-
-
-    # ========================================================
     # SONUÇ
     # ========================================================
 
     return {
 
-        "price": current_price,
+        "price": price,
 
         "ema20": ema20,
 
@@ -744,7 +957,7 @@ def technical_analysis(
 
         "macd_signal": macd_signal,
 
-        "macd_histogram": macd_histogram,
+        "histogram": histogram,
 
         "bb_middle": bb_middle,
 
@@ -752,9 +965,11 @@ def technical_analysis(
 
         "bb_lower": bb_lower,
 
-        "bollinger_status": bollinger_status,
+        "support": support,
 
-        "macd_status": macd_status,
+        "resistance": resistance,
+
+        "breakout": breakout,
 
         "score": score,
 
@@ -763,7 +978,6 @@ def technical_analysis(
         "trend": trend,
 
         "reasons": reasons
-
     }
 
 
@@ -825,62 +1039,53 @@ async def fiyat(
 
     try:
 
-        close_data = data["Close"]
+        close = data["Close"]
 
-        high_data = data["High"]
+        high = data["High"]
 
-        low_data = data["Low"]
-
-
-        if hasattr(
-            close_data,
-            "columns"
-        ):
-
-            close_data = close_data.iloc[:, 0]
+        low = data["Low"]
 
 
         if hasattr(
-            high_data,
+            close,
             "columns"
         ):
 
-            high_data = high_data.iloc[:, 0]
+            close = close.iloc[:, 0]
 
 
         if hasattr(
-            low_data,
+            high,
             "columns"
         ):
 
-            low_data = low_data.iloc[:, 0]
+            high = high.iloc[:, 0]
 
 
-        close_data = close_data.dropna()
+        if hasattr(
+            low,
+            "columns"
+        ):
 
-        high_data = high_data.dropna()
-
-        low_data = low_data.dropna()
+            low = low.iloc[:, 0]
 
 
-        if len(close_data) == 0:
+        close = close.dropna()
 
-            await update.message.reply_text(
-                "❌ Fiyat verisi boş geldi."
-            )
+        high = high.dropna()
 
-            return
+        low = low.dropna()
 
 
         current = float(
-            close_data.iloc[-1]
+            close.iloc[-1]
         )
 
 
-        if len(close_data) >= 2:
+        if len(close) >= 2:
 
             previous = float(
-                close_data.iloc[-2]
+                close.iloc[-2]
             )
 
         else:
@@ -904,12 +1109,12 @@ async def fiyat(
             change = 0
 
 
-        high = float(
-            high_data.iloc[-1]
+        high_value = float(
+            high.iloc[-1]
         )
 
-        low = float(
-            low_data.iloc[-1]
+        low_value = float(
+            low.iloc[-1]
         )
 
 
@@ -932,22 +1137,23 @@ async def fiyat(
 
             f"📊 {asset}\n\n"
 
-            f"💰 Fiyat: {current:.4f}\n\n"
+            f"💰 Fiyat: "
+            f"{current:.4f}\n\n"
 
             f"{direction} Günlük değişim: "
             f"{change:+.2f}%\n\n"
 
             f"🔺 Gün içi yüksek: "
-            f"{high:.4f}\n\n"
+            f"{high_value:.4f}\n\n"
 
             f"🔻 Gün içi düşük: "
-            f"{low:.4f}\n\n"
+            f"{low_value:.4f}\n\n"
 
             "━━━━━━━━━━━━━━━━\n\n"
 
             "📌 Veri kaynağı: Yahoo Finance\n\n"
 
-            "🧠 Teknik analiz için:\n"
+            f"🧠 Teknik analiz:\n"
             f"/analiz {asset}"
 
         )
@@ -961,13 +1167,12 @@ async def fiyat(
     except Exception as e:
 
         logger.error(
-            "Fiyat hesaplama hatası: %s",
+            "Fiyat hatası: %s",
             e
         )
 
         await update.message.reply_text(
-            "❌ Fiyat verisi işlenirken "
-            "bir hata oluştu."
+            "❌ Fiyat verisi işlenirken hata oluştu."
         )
 
 
@@ -1007,7 +1212,7 @@ async def analiz(
 
 
     await update.message.reply_text(
-        f"🧠 {info['name']} V2 analiz ediliyor..."
+        f"🧠 {info['name']} V3 analiz ediliyor..."
     )
 
 
@@ -1019,8 +1224,7 @@ async def analiz(
     if result is None:
 
         await update.message.reply_text(
-            "❌ Teknik analiz için yeterli "
-            "veri alınamadı."
+            "❌ Teknik analiz için yeterli veri alınamadı."
         )
 
         return
@@ -1032,6 +1236,28 @@ async def analiz(
     )
 
 
+    if result["support"] is not None:
+
+        support_text = (
+            f"{result['support']:.4f}"
+        )
+
+    else:
+
+        support_text = "Hesaplanamadı"
+
+
+    if result["resistance"] is not None:
+
+        resistance_text = (
+            f"{result['resistance']:.4f}"
+        )
+
+    else:
+
+        resistance_text = "Hesaplanamadı"
+
+
     mesaj = (
 
         "🦅 ANKA YATIRIM ANALİZ\n\n"
@@ -1041,7 +1267,7 @@ async def analiz(
 
         "━━━━━━━━━━━━━━━━\n\n"
 
-        "🧠 ANKA TEKNİK ANALİZ V2\n\n"
+        "🧠 ANKA TEKNİK ANALİZ V3\n\n"
 
         f"💰 Fiyat: "
         f"{result['price']:.4f}\n\n"
@@ -1066,26 +1292,33 @@ async def analiz(
         f"{result['macd_signal']:.4f}\n"
 
         f"Histogram: "
-        f"{result['macd_histogram']:.4f}\n"
-
-        f"Durum: "
-        f"{result['macd_status']}\n\n"
+        f"{result['histogram']:.4f}\n\n"
 
         "━━━━━━━━━━━━━━━━\n\n"
 
         "📊 BOLLINGER BANDI\n\n"
 
-        f"Üst bant: "
+        f"Üst: "
         f"{result['bb_upper']:.4f}\n"
 
-        f"Orta bant: "
+        f"Orta: "
         f"{result['bb_middle']:.4f}\n"
 
-        f"Alt bant: "
+        f"Alt: "
         f"{result['bb_lower']:.4f}\n\n"
 
-        f"Durum: "
-        f"{result['bollinger_status']}\n\n"
+        "━━━━━━━━━━━━━━━━\n\n"
+
+        "🎯 DESTEK / DİRENÇ\n\n"
+
+        f"🟢 Destek: "
+        f"{support_text}\n"
+
+        f"🔴 Direnç: "
+        f"{resistance_text}\n\n"
+
+        f"🚨 Durum:\n"
+        f"{result['breakout']}\n\n"
 
         "━━━━━━━━━━━━━━━━\n\n"
 
@@ -1184,7 +1417,7 @@ def main():
 
 
     print(
-        "🦅 ANKA YATIRIM ANALİZ V2 BAŞLATILDI"
+        "🦅 ANKA YATIRIM ANALİZ V3 BAŞLATILDI"
     )
 
 
