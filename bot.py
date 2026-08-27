@@ -154,6 +154,64 @@ ASSETS = {
 
 WATCHLIST = {}
 
+WATCHLIST_FILE = "watchlist.json"
+
+
+def load_watchlist():
+
+    if not os.path.exists(WATCHLIST_FILE):
+        return {}
+
+    try:
+        with open(
+            WATCHLIST_FILE,
+            "r",
+            encoding="utf-8",
+        ) as file:
+
+            data = json.load(file)
+
+        return {
+            int(user_id): set(assets)
+            for user_id, assets in data.items()
+        }
+
+    except Exception:
+
+        logger.exception(
+            "Takip listesi yüklenemedi."
+        )
+
+        return {}
+
+
+def save_watchlist():
+
+    try:
+
+        data = {
+            str(user_id): list(assets)
+            for user_id, assets in WATCHLIST.items()
+        }
+
+        with open(
+            WATCHLIST_FILE,
+            "w",
+            encoding="utf-8",
+        ) as file:
+
+            json.dump(
+                data,
+                file,
+                ensure_ascii=False,
+                indent=2,
+            )
+
+    except Exception:
+
+        logger.exception(
+            "Takip listesi kaydedilemedi."
+        )
 
 # ============================================================
 # YARDIMCI FONKSİYON
