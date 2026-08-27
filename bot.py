@@ -2451,6 +2451,8 @@ async def takip(
 
     WATCHLIST[user_id].add(asset)
 
+save_watchlist()
+
     await update.message.reply_text(
 
         f"✅ {asset} takip listesine eklendi.\n\n"
