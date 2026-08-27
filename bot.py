@@ -2372,14 +2372,17 @@ async def takip(
 
         return
 
-    WATCHLIST.add(
-        asset
-    )
+    user_id = update.effective_user.id
+
+    if user_id not in WATCHLIST:
+
+        WATCHLIST[user_id] = set()
+
+    WATCHLIST[user_id].add(asset)
 
     await update.message.reply_text(
 
         f"✅ {asset} takip listesine eklendi.\n\n"
-
         "🦅 Anka takip sistemine aldı."
     )
 
