@@ -2540,6 +2540,8 @@ async def takipsil(
 
     user_watchlist.remove(asset)
 
+    save_watchlist()
+
     await update.message.reply_text(
 
         f"🗑️ {asset} takip listesinden çıkarıldı.\n\n"
