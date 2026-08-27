@@ -151,6 +151,19 @@ ASSETS = {
 # ============================================================
 # TAKİP LİSTESİ
 # ============================================================
+logger = logging.getLogger(__name__)
+
+
+WATCHLIST_FILE = "watchlist.json"
+
+
+def load_watchlist():
+    ...
+    
+
+def save_watchlist():
+    ...
+
 
 WATCHLIST = load_watchlist()
 
