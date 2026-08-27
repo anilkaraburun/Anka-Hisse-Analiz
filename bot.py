@@ -2601,6 +2601,13 @@ def main():
     )
 
     app.add_handler(
+    CommandHandler(
+        "takipsil",
+        takipsil,
+    )
+)
+
+    app.add_handler(
         CommandHandler(
             "hakkinda",
             hakkinda,
