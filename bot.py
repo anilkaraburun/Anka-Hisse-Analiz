@@ -2560,7 +2560,6 @@ async def takip_sil(
         f"🗑️ {asset} takip listesinden çıkarıldı.\n\n"
         "🦅 Anka takibi durdurdu."
     )
-    )
     
 # ============================================================
 # /HAKKINDA
