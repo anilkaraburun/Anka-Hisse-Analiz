@@ -2684,17 +2684,17 @@ def main():
 
     app.add_handler(
         CommandHandler(
-            "takiplerim",
-            takiplerim,
+            "takip_sil",
+            takip_sil,
         )
     )
 
     app.add_handler(
-    CommandHandler(
-        "takipsil",
-        takipsil,
+        CommandHandler(
+            "takiplerim",
+            takiplerim,
+        )
     )
-)
 
     app.add_handler(
         CommandHandler(
