@@ -2422,7 +2422,57 @@ async def takiplerim(
         + liste
     )
 
+# ============================================================
+# /TAKIPSIL
+# ============================================================
 
+async def takipsil(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+
+    if not context.args:
+
+        await update.message.reply_text(
+            "Kullanım:\n\n"
+            "/takipsil THYAO"
+        )
+
+        return
+
+    asset = context.args[0].upper()
+
+    if asset not in ASSETS:
+
+        await update.message.reply_text(
+            "❌ Varlık bulunamadı."
+        )
+
+        return
+
+    user_id = update.effective_user.id
+
+    user_watchlist = WATCHLIST.get(
+        user_id,
+        set()
+    )
+
+    if asset not in user_watchlist:
+
+        await update.message.reply_text(
+            f"⚠️ {asset} takip listende bulunmuyor."
+        )
+
+        return
+
+    user_watchlist.remove(asset)
+
+    await update.message.reply_text(
+
+        f"🗑️ {asset} takip listesinden çıkarıldı.\n\n"
+        "🦅 Anka takibi durdurdu."
+    )
+    
 # ============================================================
 # /HAKKINDA
 # ============================================================
