@@ -2424,6 +2424,11 @@ async def takip(
     context: ContextTypes.DEFAULT_TYPE,
 ):
 
+    global WATCHLIST
+
+    if WATCHLIST is None:
+        WATCHLIST = {}
+
     if not context.args:
 
         await update.message.reply_text(
