@@ -2396,7 +2396,14 @@ async def takiplerim(
     context: ContextTypes.DEFAULT_TYPE,
 ):
 
-    if not WATCHLIST:
+    user_id = update.effective_user.id
+
+    user_watchlist = WATCHLIST.get(
+        user_id,
+        set()
+    )
+
+    if not user_watchlist:
 
         await update.message.reply_text(
             "📋 Takip listen boş."
@@ -2406,9 +2413,7 @@ async def takiplerim(
 
     liste = "\n".join(
         f"• {x}"
-        for x in sorted(
-            WATCHLIST
-        )
+        for x in sorted(user_watchlist)
     )
 
     await update.message.reply_text(
