@@ -152,7 +152,7 @@ ASSETS = {
 # TAKİP LİSTESİ
 # ============================================================
 
-WATCHLIST = {}
+WATCHLIST = load_watchlist()
 
 WATCHLIST_FILE = "watchlist.json"
 
