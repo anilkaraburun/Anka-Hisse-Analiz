@@ -2501,19 +2501,24 @@ async def takiplerim(
     )
 
 # ============================================================
-# /TAKIPSIL
+# /TAKIP_SIL
 # ============================================================
 
-async def takipsil(
+async def takip_sil(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+
+    global WATCHLIST
+
+    if WATCHLIST is None:
+        WATCHLIST = {}
 
     if not context.args:
 
         await update.message.reply_text(
             "Kullanım:\n\n"
-            "/takipsil THYAO"
+            "/takip_sil THYAO"
         )
 
         return
@@ -2530,20 +2535,23 @@ async def takipsil(
 
     user_id = update.effective_user.id
 
-    user_watchlist = WATCHLIST.get(
-        user_id,
-        set()
-    )
-
-    if asset not in user_watchlist:
+    if user_id not in WATCHLIST:
 
         await update.message.reply_text(
-            f"⚠️ {asset} takip listende bulunmuyor."
+            "📋 Takip listen boş."
         )
 
         return
 
-    user_watchlist.remove(asset)
+    if asset not in WATCHLIST[user_id]:
+
+        await update.message.reply_text(
+            f"❌ {asset} takip listende bulunmuyor."
+        )
+
+        return
+
+    WATCHLIST[user_id].remove(asset)
 
     save_watchlist()
 
@@ -2551,6 +2559,7 @@ async def takipsil(
 
         f"🗑️ {asset} takip listesinden çıkarıldı.\n\n"
         "🦅 Anka takibi durdurdu."
+    )
     )
     
 # ============================================================
