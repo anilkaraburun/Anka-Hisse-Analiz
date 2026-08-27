@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 import math
 
@@ -151,21 +152,6 @@ ASSETS = {
 # ============================================================
 # TAKİP LİSTESİ
 # ============================================================
-logger = logging.getLogger(__name__)
-
-
-WATCHLIST_FILE = "watchlist.json"
-
-
-def load_watchlist():
-    ...
-    
-
-def save_watchlist():
-    ...
-
-
-WATCHLIST = load_watchlist()
 
 WATCHLIST_FILE = "watchlist.json"
 
@@ -176,6 +162,7 @@ def load_watchlist():
         return {}
 
     try:
+
         with open(
             WATCHLIST_FILE,
             "r",
@@ -184,10 +171,22 @@ def load_watchlist():
 
             data = json.load(file)
 
-        return {
-            int(user_id): set(assets)
-            for user_id, assets in data.items()
-        }
+        if not isinstance(data, dict):
+            return {}
+
+        result = {}
+
+        for user_id, assets in data.items():
+
+            try:
+
+                result[int(user_id)] = set(assets)
+
+            except Exception:
+
+                continue
+
+        return result
 
     except Exception:
 
@@ -203,7 +202,7 @@ def save_watchlist():
     try:
 
         data = {
-            str(user_id): list(assets)
+            str(user_id): sorted(list(assets))
             for user_id, assets in WATCHLIST.items()
         }
 
@@ -226,17 +225,25 @@ def save_watchlist():
             "Takip listesi kaydedilemedi."
         )
 
+
+WATCHLIST = load_watchlist()
+
+
 # ============================================================
 # YARDIMCI FONKSİYON
 # ============================================================
 
-def safe_float(value, default=None):
+def safe_float(
+    value,
+    default=None,
+):
 
     try:
 
         value = float(value)
 
         if math.isnan(value) or math.isinf(value):
+
             return default
 
         return value
@@ -280,9 +287,15 @@ def get_data(
         # MultiIndex güvenliği
         # ----------------------------------------------------
 
-        if isinstance(data.columns, pd.MultiIndex):
+        if isinstance(
+            data.columns,
+            pd.MultiIndex,
+        ):
 
-            data.columns = data.columns.get_level_values(0)
+            data.columns = (
+                data.columns
+                .get_level_values(0)
+            )
 
         # ----------------------------------------------------
         # Gerekli kolonlar
@@ -314,7 +327,11 @@ def get_data(
             )
 
         data = data.dropna(
-            subset=["Close", "High", "Low"]
+            subset=[
+                "Close",
+                "High",
+                "Low",
+            ]
         )
 
         if data.empty:
@@ -588,20 +605,6 @@ def calculate_volume_ratio(
 
 # ============================================================
 # DESTEK / DİRENÇ
-#
-# Eski sistemde:
-#
-# En yakın tek High / Low alınıyordu.
-#
-# Bu yüzden:
-# Destek 302.25
-# Direnç 303.00
-#
-# gibi anlamsız dar aralıklar oluşabiliyordu.
-#
-# Yeni sistem:
-# Son 60 mum içerisinde lokal dip/tepe noktalarını
-# belirler ve fiyat çevresindeki seviyeleri kümeler.
 # ============================================================
 
 def calculate_support_resistance(
@@ -639,10 +642,6 @@ def calculate_support_resistance(
     if current is None:
 
         return None, None
-
-    # --------------------------------------------------------
-    # Lokal dipler
-    # --------------------------------------------------------
 
     support_candidates = []
 
@@ -696,10 +695,6 @@ def calculate_support_resistance(
                     value
                 )
 
-    # --------------------------------------------------------
-    # Lokal tepeler
-    # --------------------------------------------------------
-
     resistance_candidates = []
 
     for i in range(
@@ -752,18 +747,16 @@ def calculate_support_resistance(
                     value
                 )
 
-    # --------------------------------------------------------
-    # ATR ile seviye kümelendirme
-    # --------------------------------------------------------
-
     atr_series = calculate_atr(
         recent,
         14,
     )
 
+    atr_clean = atr_series.dropna()
+
     atr = safe_float(
-        atr_series.dropna().iloc[-1]
-        if not atr_series.dropna().empty
+        atr_clean.iloc[-1]
+        if not atr_clean.empty
         else current * 0.02,
         current * 0.02,
     )
@@ -772,10 +765,6 @@ def calculate_support_resistance(
         atr * 0.60,
         current * 0.005,
     )
-
-    # --------------------------------------------------------
-    # Seviyeleri kümele
-    # --------------------------------------------------------
 
     def cluster_levels(
         levels,
@@ -794,10 +783,14 @@ def calculate_support_resistance(
 
         for level in levels[1:]:
 
-            cluster_average = sum(
-                clusters[-1]
-            ) / len(
-                clusters[-1]
+            cluster_average = (
+                sum(
+                    clusters[-1]
+                )
+                /
+                len(
+                    clusters[-1]
+                )
             )
 
             if abs(
@@ -827,10 +820,6 @@ def calculate_support_resistance(
         resistance_candidates
     )
 
-    # --------------------------------------------------------
-    # Fiyata en yakın anlamlı destek
-    # --------------------------------------------------------
-
     supports_below = [
         level
         for level in supports
@@ -845,15 +834,9 @@ def calculate_support_resistance(
 
     else:
 
-        # Lokal dip bulunamazsa son 60 mumun alt sınırına
-        # yakın daha güvenli alternatif
         support = safe_float(
             recent["Low"].min()
         )
-
-    # --------------------------------------------------------
-    # Fiyata en yakın anlamlı direnç
-    # --------------------------------------------------------
 
     resistances_above = [
         level
@@ -881,17 +864,6 @@ def calculate_support_resistance(
 
 # ============================================================
 # ANKA SKOR MOTORU
-#
-# TOPLAM 100
-#
-# EMA20              15
-# EMA50              15
-# RSI                15
-# MACD               15
-# Histogram          10
-# Bollinger           10
-# Stochastic           10
-# Destek / Direnç       10
 # ============================================================
 
 def calculate_anka_score(
@@ -1125,10 +1097,6 @@ def calculate_anka_score(
             resistance - price
         )
 
-        # ----------------------------------------------------
-        # Desteğe yakın
-        # ----------------------------------------------------
-
         if (
             distance_to_support
             <= total_range * 0.20
@@ -1139,10 +1107,6 @@ def calculate_anka_score(
             reasons.append(
                 "• Fiyat destek bölgesine yakın"
             )
-
-        # ----------------------------------------------------
-        # Dirence yakın
-        # ----------------------------------------------------
 
         elif (
             distance_to_resistance
@@ -1666,7 +1630,10 @@ def technical_analysis(
 
         resistance_distance_percent = None
 
-        if support is not None and support != 0:
+        if (
+            support is not None
+            and support != 0
+        ):
 
             support_distance_percent = (
                 (price - support)
@@ -1674,7 +1641,10 @@ def technical_analysis(
                 * 100
             )
 
-        if resistance is not None and resistance != 0:
+        if (
+            resistance is not None
+            and resistance != 0
+        ):
 
             resistance_distance_percent = (
                 (resistance - price)
@@ -1800,6 +1770,7 @@ otomatik teknik analiz botu.
 
 /takip THYAO
 /takiplerim
+/takip_sil THYAO
 
 /test
 
@@ -2003,7 +1974,7 @@ async def fiyat(
 
             "📌 Veri kaynağı: Yahoo Finance\n\n"
 
-            f"🧠 Teknik analiz:\n"
+            "🧠 Teknik analiz:\n"
             f"/analiz {asset}"
         )
 
@@ -2095,10 +2066,6 @@ async def analiz(
 
         else "Hesaplanamadı"
     )
-
-    # --------------------------------------------------------
-    # Destek / direnç yüzdeleri
-    # --------------------------------------------------------
 
     if (
         result["support_distance_percent"]
@@ -2427,6 +2394,7 @@ async def takip(
     global WATCHLIST
 
     if WATCHLIST is None:
+
         WATCHLIST = {}
 
     if not context.args:
@@ -2454,7 +2422,17 @@ async def takip(
 
         WATCHLIST[user_id] = set()
 
-    WATCHLIST[user_id].add(asset)
+    if asset in WATCHLIST[user_id]:
+
+        await update.message.reply_text(
+            f"ℹ️ {asset} zaten takip listende."
+        )
+
+        return
+
+    WATCHLIST[user_id].add(
+        asset
+    )
 
     save_watchlist()
 
@@ -2474,11 +2452,17 @@ async def takiplerim(
     context: ContextTypes.DEFAULT_TYPE,
 ):
 
+    global WATCHLIST
+
+    if WATCHLIST is None:
+
+        WATCHLIST = {}
+
     user_id = update.effective_user.id
 
     user_watchlist = WATCHLIST.get(
         user_id,
-        set()
+        set(),
     )
 
     if not user_watchlist:
@@ -2491,7 +2475,9 @@ async def takiplerim(
 
     liste = "\n".join(
         f"• {x}"
-        for x in sorted(user_watchlist)
+        for x in sorted(
+            user_watchlist
+        )
     )
 
     await update.message.reply_text(
@@ -2499,6 +2485,7 @@ async def takiplerim(
         "🦅 ANKA TAKİP LİSTESİ\n\n"
         + liste
     )
+
 
 # ============================================================
 # /TAKIP_SIL
@@ -2512,6 +2499,7 @@ async def takip_sil(
     global WATCHLIST
 
     if WATCHLIST is None:
+
         WATCHLIST = {}
 
     if not context.args:
@@ -2551,7 +2539,13 @@ async def takip_sil(
 
         return
 
-    WATCHLIST[user_id].remove(asset)
+    WATCHLIST[user_id].remove(
+        asset
+    )
+
+    if not WATCHLIST[user_id]:
+
+        del WATCHLIST[user_id]
 
     save_watchlist()
 
@@ -2560,7 +2554,8 @@ async def takip_sil(
         f"🗑️ {asset} takip listesinden çıkarıldı.\n\n"
         "🦅 Anka takibi durdurdu."
     )
-    
+
+
 # ============================================================
 # /HAKKINDA
 # ============================================================
