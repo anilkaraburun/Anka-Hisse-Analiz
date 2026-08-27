@@ -2451,7 +2451,7 @@ async def takip(
 
     WATCHLIST[user_id].add(asset)
 
-save_watchlist()
+    save_watchlist()
 
     await update.message.reply_text(
 
